@@ -1,11 +1,10 @@
-import type { FormRule } from '@/types';
+import type { FormRule } from "@/types";
 
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
-import { XCircle } from 'lucide-react';
-import { Button } from './ui/Button';
-import { Card } from './ui/card';
-import { Input } from './ui/input';
-import { Label } from './ui/label';
+import { XCircle } from "lucide-react";
+import { Button } from "./ui/button";
+import { Card } from "./ui/card";
+import { Input } from "./ui/input";
+import { Label } from "./ui/label";
 
 interface FormRuleProps {
   rule: FormRule;
@@ -41,7 +40,7 @@ export function FormRuleComponent({ rule, onChange, onRemove }: FormRuleProps) {
               </SelectContent>
             </Select> */}
           </div>
-          
+
           <div className="space-y-2">
             <Label htmlFor={`min-angle-${rule.id}`}>Min Angle</Label>
             <Input
@@ -50,10 +49,12 @@ export function FormRuleComponent({ rule, onChange, onRemove }: FormRuleProps) {
               min={0}
               max={180}
               value={rule.min_angle}
-              onChange={(e) => onChange(rule.id, 'min_angle', parseInt(e.target.value))}
+              onChange={(e) =>
+                onChange(rule.id, "min_angle", parseInt(e.target.value))
+              }
             />
           </div>
-          
+
           <div className="space-y-2">
             <Label htmlFor={`max-angle-${rule.id}`}>Max Angle</Label>
             <Input
@@ -62,21 +63,23 @@ export function FormRuleComponent({ rule, onChange, onRemove }: FormRuleProps) {
               min={0}
               max={180}
               value={rule.max_angle}
-              onChange={(e) => onChange(rule.id, 'max_angle', parseInt(e.target.value))}
+              onChange={(e) =>
+                onChange(rule.id, "max_angle", parseInt(e.target.value))
+              }
             />
           </div>
-          
+
           <div className="space-y-2">
             <Label htmlFor={`feedback-${rule.id}`}>Feedback Message</Label>
             <Input
               id={`feedback-${rule.id}`}
               placeholder="e.g., Bend your knees more"
               value={rule.feedback}
-              onChange={(e) => onChange(rule.id, 'feedback', e.target.value)}
+              onChange={(e) => onChange(rule.id, "feedback", e.target.value)}
             />
           </div>
         </div>
-        
+
         <Button
           variant="ghost"
           size="icon"

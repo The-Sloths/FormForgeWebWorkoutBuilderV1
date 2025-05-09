@@ -1,5 +1,6 @@
 import "./App.css";
 import { useState } from "react";
+import { BrowserRouter, Routes, Route, Link } from "react-router-dom";
 import { PoseUpload } from "./components/pose-upload";
 import { FormRuleComponent } from "./components/form-rule";
 import { LandmarkCanvas } from "./components/landmark-canvas";
@@ -10,10 +11,11 @@ import { Plus } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "./components/ui/card";
 import { Input } from "./components/ui/input";
 import { Textarea } from "./components/ui/textarea";
-import { Button } from "./components/ui/Button";
+import { Button } from "./components/ui/button";
 import { Toaster } from "./components/ui/toaster";
+import DocumentsPage from "./pages/DocumentsPage";
 
-export default function App() {
+function WorkoutBuilder() {
   const { toast } = useToast();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -24,7 +26,7 @@ export default function App() {
     Landmark[] | null
   >(null);
   const [endPoseLandmarks, setEndPoseLandmarks] = useState<Landmark[] | null>(
-    null
+    null,
   );
   const [formRules, setFormRules] = useState<FormRule[]>([
     { id: 1, joint_name: "", min_angle: 0, max_angle: 180, feedback: "" },
@@ -33,7 +35,7 @@ export default function App() {
 
   // For canvas visualization
   const [currentImage, setCurrentImage] = useState<HTMLImageElement | null>(
-    null
+    null,
   );
   const [currentResults, setCurrentResults] = useState<any>(null);
 
@@ -68,12 +70,12 @@ export default function App() {
   const updateFormRule = (
     id: number,
     field: keyof FormRule,
-    value: string | number
+    value: string | number,
   ) => {
     setFormRules(
       formRules.map((rule) =>
-        rule.id === id ? { ...rule, [field]: value } : rule
-      )
+        rule.id === id ? { ...rule, [field]: value } : rule,
+      ),
     );
   };
 
@@ -104,7 +106,7 @@ export default function App() {
     }
 
     const validRules = formRules.filter(
-      (rule) => rule.joint_name && rule.feedback
+      (rule) => rule.joint_name && rule.feedback,
     );
     if (validRules.length === 0) {
       toast({
@@ -291,14 +293,37 @@ export default function App() {
           </Button>
         </form>
       </main>
-
-      <footer className="bg-primary text-primary-foreground py-6 mt-12">
-        <div className="container mx-auto text-center">
-          <p>&copy; 2025 FormForge</p>
-        </div>
-      </footer>
-
-      <Toaster />
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <BrowserRouter>
+      <div>
+        <nav className="bg-primary text-primary-foreground">
+          <div className="container mx-auto px-4 py-2 flex items-center justify-between">
+            <Link to="/" className="font-bold text-lg">
+              FormForge
+            </Link>
+            <div className="space-x-4">
+              <Link to="/" className="hover:underline">
+                Workouts
+              </Link>
+              <Link to="/documents" className="hover:underline">
+                Documents
+              </Link>
+            </div>
+          </div>
+        </nav>
+
+        <Routes>
+          <Route path="/" element={<WorkoutBuilder />} />
+          <Route path="/documents" element={<DocumentsPage />} />
+        </Routes>
+
+        <Toaster />
+      </div>
+    </BrowserRouter>
   );
 }
