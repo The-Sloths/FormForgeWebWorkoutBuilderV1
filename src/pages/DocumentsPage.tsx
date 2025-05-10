@@ -1,26 +1,107 @@
+// FormForgeWebWorkoutBuilderV1/src/pages/DocumentsPage.tsx
 import React, { useState } from "react";
 import { FileUploadDropzone } from "@/components/file-upload-dropzone";
-import { UploadProvider, useUpload } from "@/contexts/UploadContext";
+import {
+  UploadProvider,
+  useUpload,
+  type FileUploadStatus,
+} from "@/contexts/UploadContext";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader2, Upload, CheckCircle, AlertCircle } from "lucide-react";
+import {
+  Loader2,
+  Upload,
+  CheckCircle,
+  AlertCircle,
+  X,
+  FileText,
+} from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/components/ui/use-toast";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+
+// File item component to display individual file status
+function FileItem({ fileStatus }: { fileStatus: FileUploadStatus }) {
+  const { removeFile } = useUpload();
+
+  const getStatusIcon = () => {
+    switch (fileStatus.status) {
+      case "uploading":
+        return <Loader2 className="h-4 w-4 animate-spin text-blue-500" />;
+      case "completed":
+        return <CheckCircle className="h-4 w-4 text-green-500" />;
+      case "error":
+        return <AlertCircle className="h-4 w-4 text-destructive" />;
+      default:
+        return <FileText className="h-4 w-4 text-blue-500" />;
+    }
+  };
+
+  return (
+    <div className="border rounded-md p-3 mb-2 bg-card">
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center space-x-3">
+          {getStatusIcon()}
+          <span className="text-sm font-medium truncate max-w-[18rem]">
+            {fileStatus.file.name}
+          </span>
+          <span className="text-xs text-muted-foreground">
+            {(fileStatus.file.size / 1024).toFixed(1)} KB
+          </span>
+        </div>
+
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => removeFile(fileStatus.id)}
+          disabled={fileStatus.status === "uploading"}
+        >
+          <X className="h-4 w-4" />
+        </Button>
+      </div>
+
+      {(fileStatus.status === "uploading" ||
+        fileStatus.status === "completed") && (
+        <div className="space-y-1">
+          <Progress value={fileStatus.progress} />
+          <div className="flex justify-between items-center text-xs text-muted-foreground">
+            <span>
+              {fileStatus.status === "completed" ? "Completed" : "Uploading"}
+            </span>
+            <span>{fileStatus.progress.toFixed(0)}%</span>
+          </div>
+        </div>
+      )}
+
+      {fileStatus.status === "error" && (
+        <div className="text-xs text-destructive mt-1">
+          {fileStatus.error || "Error uploading file"}
+        </div>
+      )}
+
+      {fileStatus.status === "completed" &&
+        fileStatus.result !== null &&
+        fileStatus.result !== undefined &&
+        typeof fileStatus.result === "object" &&
+        "chunks" in fileStatus.result && (
+          <div className="text-xs text-muted-foreground mt-1">
+            {String(fileStatus.result.chunks)} chunks created
+          </div>
+        )}
+    </div>
+  );
+}
 
 // Inner component that uses the upload context
 function DocumentUploader() {
   const {
-    files,
+    fileStatuses,
     isUploading,
-    uploadProgress,
+    overallProgress,
     uploadError,
-    setIsUploading,
-    setUploadProgress,
-    setUploadError,
-    clearFiles,
+    uploadFiles,
+    cancelUpload,
   } = useUpload();
   const { toast } = useToast();
   const [metadata, setMetadata] = useState("");
@@ -28,7 +109,7 @@ function DocumentUploader() {
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
 
-    if (files.length === 0) {
+    if (fileStatuses.length === 0) {
       toast({
         title: "No files selected",
         description: "Please select at least one file to upload.",
@@ -37,69 +118,61 @@ function DocumentUploader() {
       return;
     }
 
-    setIsUploading(true);
-    setUploadProgress(0);
-    setUploadError(null);
-
     try {
-      // Process each file
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i];
-        const formData = new FormData();
-        formData.append("file", file);
-
-        // Add options if provided
-        if (metadata) {
-          formData.append("options", metadata);
-        }
-
-        // Calculate progress for current file
-        const fileProgress = (i / files.length) * 100;
-        setUploadProgress(fileProgress);
-
-        // Upload the file
-        const response = await fetch("http://localhost:3000/api/files/upload", {
-          method: "POST",
-          body: formData,
-        });
-
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.message || "Failed to upload file");
-        }
-
-        // Update progress
-        setUploadProgress(((i + 1) / files.length) * 100);
-      }
-
-      // All uploads completed successfully
-      toast({
-        title: "Upload Successful",
-        description: `${files.length} file(s) uploaded successfully.`,
-      });
-
-      clearFiles();
+      await uploadFiles(metadata);
     } catch (error) {
       console.error("Upload error:", error);
-      setUploadError(
-        error instanceof Error ? error.message : "Unknown error occurred",
-      );
-      toast({
-        title: "Upload Failed",
-        description:
-          error instanceof Error
-            ? error.message
-            : "An error occurred during upload",
-        variant: "destructive",
-      });
-    } finally {
-      setIsUploading(false);
+      // Error handling is done in the context
     }
+  };
+
+  const pendingCount = fileStatuses.filter(
+    (f) => f.status === "pending",
+  ).length;
+  const uploadingCount = fileStatuses.filter(
+    (f) => f.status === "uploading",
+  ).length;
+  const completedCount = fileStatuses.filter(
+    (f) => f.status === "completed",
+  ).length;
+  const errorCount = fileStatuses.filter((f) => f.status === "error").length;
+
+  const renderSummary = () => {
+    if (fileStatuses.length === 0) return null;
+
+    return (
+      <div className="text-sm mb-4">
+        <span className="font-medium">
+          {fileStatuses.length} file{fileStatuses.length !== 1 && "s"} total:
+        </span>{" "}
+        {pendingCount > 0 && <span>{pendingCount} pending </span>}
+        {uploadingCount > 0 && <span>{uploadingCount} uploading </span>}
+        {completedCount > 0 && (
+          <span className="text-green-600">{completedCount} completed </span>
+        )}
+        {errorCount > 0 && (
+          <span className="text-destructive">{errorCount} failed</span>
+        )}
+      </div>
+    );
   };
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
       <FileUploadDropzone />
+
+      {renderSummary()}
+
+      {fileStatuses.length > 0 && (
+        <div className="space-y-2">
+          <h4 className="text-sm font-medium">Files</h4>
+          <div className="space-y-2">
+            {fileStatuses.map((fileStatus) => (
+              <FileItem key={fileStatus.id} fileStatus={fileStatus} />
+            ))}
+          </div>
+        </div>
+      )}
 
       <Card>
         <CardHeader>
@@ -130,30 +203,41 @@ function DocumentUploader() {
 
       {isUploading && (
         <div className="space-y-2">
-          <Progress value={uploadProgress} />
+          <Progress value={overallProgress} />
           <p className="text-sm text-center text-muted-foreground">
-            Uploading {uploadProgress.toFixed(0)}%
+            Overall Progress: {overallProgress.toFixed(0)}%
           </p>
         </div>
       )}
 
-      <Button
-        type="submit"
-        disabled={isUploading || files.length === 0}
-        className="w-full"
-      >
-        {isUploading ? (
-          <>
-            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-            Uploading...
-          </>
-        ) : (
-          <>
-            <Upload className="h-4 w-4 mr-2" />
-            Upload Files
-          </>
+      <div className="flex space-x-3">
+        <Button
+          type="submit"
+          disabled={
+            isUploading || fileStatuses.length === 0 || pendingCount === 0
+          }
+          className="flex-1"
+        >
+          {isUploading ? (
+            <>
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              Uploading...
+            </>
+          ) : (
+            <>
+              <Upload className="h-4 w-4 mr-2" />
+              Upload Files
+            </>
+          )}
+        </Button>
+
+        {isUploading && (
+          <Button type="button" variant="outline" onClick={cancelUpload}>
+            <X className="h-4 w-4 mr-2" />
+            Cancel
+          </Button>
         )}
-      </Button>
+      </div>
     </form>
   );
 }
