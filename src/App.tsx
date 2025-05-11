@@ -1,18 +1,18 @@
-import "./App.css";
+import { Button } from "@/components/ui/button";
+import { Toaster } from "@/components/ui/toaster";
+import type { FormRule, Landmark, Workout } from "@/types";
+import { Plus } from "lucide-react";
 import { useState } from "react";
-import { BrowserRouter, Routes, Route, Link } from "react-router-dom";
-import { PoseUpload } from "./components/pose-upload";
+import { BrowserRouter, Link, Route, Routes } from "react-router-dom";
+import "./App.css";
 import { FormRuleComponent } from "./components/form-rule";
 import { LandmarkCanvas } from "./components/landmark-canvas";
-import { useToast } from "./components/ui/use-toast";
-import type { FormRule, Landmark, Workout } from "@/types";
-import { saveWorkout } from "./lib/supabase";
-import { Plus } from "lucide-react";
+import { PoseUpload } from "./components/pose-upload";
 import { Card, CardContent, CardHeader, CardTitle } from "./components/ui/card";
 import { Input } from "./components/ui/input";
 import { Textarea } from "./components/ui/textarea";
-import { Button } from "./components/ui/button";
-import { Toaster } from "./components/ui/toaster";
+import { useToast } from "./components/ui/use-toast";
+import { saveWorkout } from "./lib/supabase";
 import DocumentsPage from "./pages/DocumentsPage";
 
 function WorkoutBuilder() {
