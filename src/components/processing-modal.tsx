@@ -6,6 +6,8 @@ import {
   FileText,
   Info,
   Layers,
+  ClipboardList,
+  DumbbellIcon,
 } from "lucide-react";
 import {
   Dialog,
@@ -18,7 +20,278 @@ import {
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
 import { useFileProcessing } from "@/contexts/FileProcessingContext";
+import axios from "axios";
+import { io } from "socket.io-client";
+import { useNavigate } from "react-router-dom";
 
+// Create socket instance
+const socket = io(import.meta.env.VITE_API_URL || "http://localhost:3000");
+
+// Training Plan Modal Component
+interface TrainingPlanModalProps {
+  isOpen: boolean;
+  setIsOpen: (isOpen: boolean) => void;
+  fileIds: string[];
+}
+
+const TrainingPlanModal: React.FC<TrainingPlanModalProps> = ({
+  isOpen,
+  setIsOpen,
+  fileIds,
+}) => {
+  const navigate = useNavigate(); // Moved inside the component
+  const [planId, setPlanId] = useState<string | null>(null);
+  const [planStatus, setPlanStatus] = useState<
+    "idle" | "creating" | "generating" | "complete" | "error"
+  >("idle");
+  const [planProgress, setPlanProgress] = useState<number>(0);
+  const [planError, setPlanError] = useState<string | null>(null);
+  const [planResult, setPlanResult] = useState<any | null>(null);
+  const [currentStep, setCurrentStep] = useState<string | null>(null);
+
+  // Create the workout plan when the modal opens
+  useEffect(() => {
+    if (isOpen && fileIds.length > 0 && planStatus === "idle") {
+      createWorkoutPlan();
+    }
+  }, [isOpen, fileIds]);
+
+  // Set up socket listeners when planId is available
+  useEffect(() => {
+    if (!planId) return;
+
+    // Join the workout plan room
+    socket.emit("joinWorkoutPlanRoom", planId);
+
+    // Listen for workout plan progress events
+    const handleProgress = (data: any) => {
+      if (data.planId === planId) {
+        setPlanProgress(data.progress);
+        setCurrentStep(data.step);
+        setPlanStatus("generating");
+      }
+    };
+
+    // Listen for workout plan completion
+    const handleComplete = (data: any) => {
+      if (data.planId === planId) {
+        setPlanProgress(100);
+        setPlanStatus("complete");
+        setPlanResult(data.result);
+        console.log("Workout plan creation complete:", data);
+      }
+    };
+
+    // Listen for workout plan errors
+    const handleError = (data: any) => {
+      if (data.planId === planId) {
+        setPlanStatus("error");
+        setPlanError(data.error);
+      }
+    };
+
+    // Register event listeners
+    socket.on("workoutPlanProgress", handleProgress);
+    socket.on("workoutPlanComplete", handleComplete);
+    socket.on("workoutPlanError", handleError);
+
+    // Clean up listeners on unmount
+    return () => {
+      socket.off("workoutPlanProgress", handleProgress);
+      socket.off("workoutPlanComplete", handleComplete);
+      socket.off("workoutPlanError", handleError);
+      socket.emit("leaveWorkoutPlanRoom", planId);
+    };
+  }, [planId]);
+
+  // Function to create a workout plan
+  const createWorkoutPlan = async () => {
+    try {
+      setPlanStatus("creating");
+      setPlanProgress(0);
+      setPlanError(null);
+
+      const payload = {
+        query: "Create a beginner strength training program",
+        fileIds: fileIds,
+        options: {
+          fitnessLevel: "beginner",
+          specificGoals: ["strength"],
+        },
+      };
+
+      const response = await axios.post(
+        "http://localhost:3000/api/workout-plans",
+        payload,
+      );
+      console.log("Workout plan creation initiated:", response.data);
+
+      // Set the plan ID from the response
+      setPlanId(response.data.planId);
+    } catch (error: any) {
+      console.error("Error creating workout plan:", error);
+      setPlanStatus("error");
+      setPlanError(
+        error.response?.data?.message || "Failed to create workout plan",
+      );
+    }
+  };
+
+  // Handle closing the modal
+  const handleClose = () => {
+    setIsOpen(false);
+  };
+
+  // Handle showing plans
+  const handleShowPlans = () => {
+    // Here you would navigate to the plans page
+    setIsOpen(false);
+    console.log("Navigate to plans page, showing plan:", planResult);
+    navigate("/workout-plan"); // Replace alert with navigation
+  };
+
+  // Get status icon based on current state
+  const getStatusIcon = () => {
+    switch (planStatus) {
+      case "complete":
+        return <CheckCircle className="h-10 w-10 text-green-500 mb-4" />;
+      case "error":
+        return <AlertCircle className="h-10 w-10 text-red-500 mb-4" />;
+      case "creating":
+      case "generating":
+        return (
+          <RefreshCw className="h-10 w-10 text-blue-500 animate-spin mb-4" />
+        );
+      default:
+        return <DumbbellIcon className="h-10 w-10 text-blue-500 mb-4" />;
+    }
+  };
+
+  // Get status title based on current state
+  const getStatusTitle = () => {
+    switch (planStatus) {
+      case "complete":
+        return "Training Plan Created!";
+      case "error":
+        return "Training Plan Error";
+      case "creating":
+        return "Creating Training Plan";
+      case "generating":
+        return "Generating Training Plan";
+      default:
+        return "Training Plan Creation";
+    }
+  };
+
+  // Get status description based on current state
+  const getStatusDescription = () => {
+    switch (planStatus) {
+      case "complete":
+        return "Your personalized training plan has been created successfully.";
+      case "error":
+        return (
+          planError || "An error occurred while creating your training plan."
+        );
+      case "creating":
+        return "Initializing training plan creation...";
+      case "generating":
+        return currentStep || "Generating your personalized training plan...";
+      default:
+        return "Preparing to create your training plan...";
+    }
+  };
+
+  return (
+    <Dialog open={isOpen} onOpenChange={setIsOpen}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader className="flex items-center flex-col sm:items-start">
+          <div className="flex justify-center w-full mb-2">
+            {getStatusIcon()}
+          </div>
+          <DialogTitle>{getStatusTitle()}</DialogTitle>
+          <DialogDescription>{getStatusDescription()}</DialogDescription>
+        </DialogHeader>
+
+        {/* Show progress for generating state */}
+        {(planStatus === "creating" || planStatus === "generating") && (
+          <div className="my-4">
+            <div className="flex justify-between items-center mb-2">
+              <span className="text-sm font-medium">Progress</span>
+              <span className="text-sm text-muted-foreground">
+                {planProgress}%
+              </span>
+            </div>
+            <Progress value={planProgress} className="h-2" />
+          </div>
+        )}
+
+        {/* Show result summary when complete */}
+        {planStatus === "complete" && planResult && (
+          <div className="my-4 text-sm">
+            <div className="flex flex-col space-y-2 text-muted-foreground">
+              <div className="flex items-center">
+                <ClipboardList className="h-4 w-4 mr-2" />
+                <p className="font-medium">
+                  {planResult.program_name || "Custom Workout Program"}
+                </p>
+              </div>
+              <p>
+                {planResult.program_description ||
+                  "A personalized workout program based on your files."}
+              </p>
+              {planResult.required_gear &&
+                planResult.required_gear.length > 0 && (
+                  <div>
+                    <p className="font-medium">Required Equipment:</p>
+                    <ul className="ml-4 mt-1 space-y-1 list-disc">
+                      {planResult.required_gear.map(
+                        (item: string, index: number) => (
+                          <li key={index}>{item}</li>
+                        ),
+                      )}
+                    </ul>
+                  </div>
+                )}
+            </div>
+          </div>
+        )}
+
+        {/* Debug info */}
+        <details className="text-xs text-muted-foreground mt-2 mb-2">
+          <summary className="flex items-center cursor-pointer">
+            <Info className="h-3 w-3 mr-1" />
+            Debug Info
+          </summary>
+          <div className="mt-1 pl-4 border-l-2 border-muted">
+            <p>Plan ID: {planId || "None"}</p>
+            <p>Status: {planStatus}</p>
+            <p>Progress: {planProgress}%</p>
+            <p>Files: {fileIds.length}</p>
+          </div>
+        </details>
+
+        <DialogFooter className="mt-4">
+          {planStatus === "complete" ? (
+            <Button onClick={handleShowPlans} className="w-full">
+              Show My Plans
+            </Button>
+          ) : planStatus === "error" ? (
+            <Button onClick={handleClose} className="w-full">
+              Close
+            </Button>
+          ) : (
+            <Button disabled className="w-full">
+              <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+              Processing...
+            </Button>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+};
+
+// Main Processing Modal
 const ProcessingModal: React.FC = () => {
   const {
     processingId,
@@ -42,6 +315,10 @@ const ProcessingModal: React.FC = () => {
     serverStatus,
   } = useFileProcessing();
 
+  // State for training plan modal
+  const [isTrainingPlanModalOpen, setIsTrainingPlanModalOpen] = useState(false);
+  const [fileIds, setFileIds] = useState<string[]>([]);
+
   // Debug - last update timestamp
   const [lastUpdate, setLastUpdate] = useState<string>("");
 
@@ -62,6 +339,29 @@ const ProcessingModal: React.FC = () => {
     serverStatus,
   ]);
 
+  // Automatically open training plan modal when processing is complete
+  useEffect(() => {
+    if (
+      processingStatus === "complete" &&
+      processingResults &&
+      !isTrainingPlanModalOpen
+    ) {
+      // Extract file IDs from processing results
+      const extractedFileIds = processingResults.results.map(
+        (result) => result.fileId,
+      );
+
+      if (extractedFileIds.length > 0) {
+        setFileIds(extractedFileIds);
+        // Close the processing modal and open the training plan modal
+        setTimeout(() => {
+          setIsModalOpen(false);
+          setIsTrainingPlanModalOpen(true);
+        }, 1000); // Small delay for better UX
+      }
+    }
+  }, [processingStatus, processingResults]);
+
   const getStatusIcon = () => {
     switch (processingStatus) {
       case "complete":
@@ -76,6 +376,7 @@ const ProcessingModal: React.FC = () => {
         return null;
     }
   };
+
   const getStatusTitle = () => {
     switch (processingStatus) {
       case "complete":
@@ -134,13 +435,6 @@ const ProcessingModal: React.FC = () => {
     }
   };
 
-  const handleComplete = () => {
-    setIsModalOpen(false);
-    resetProcessing();
-    // Show alert to indicate we should redirect to plans
-    alert("Now we should redirect to plans");
-  };
-
   // Function to render additional progress bars based on available data
   const renderDetailedProgress = () => {
     return (
@@ -171,113 +465,127 @@ const ProcessingModal: React.FC = () => {
       </div>
     );
   };
+
   return (
-    <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader className="flex items-center flex-col sm:items-start">
-          <div className="flex justify-center w-full mb-2">
-            {getStatusIcon()}
-          </div>
-          <DialogTitle>{getStatusTitle()}</DialogTitle>
-          <DialogDescription>{getStatusDescription()}</DialogDescription>
-        </DialogHeader>
-
-        {/* Only show progress for processing state */}
-        {processingStatus === "processing" && (
-          <div className="my-4">
-            <div className="flex justify-between items-center mb-2">
-              <span className="text-sm font-medium">Overall Progress</span>
-              <span className="text-sm text-muted-foreground">
-                {processingProgress}%
-              </span>
+    <>
+      {/* Processing Modal */}
+      <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader className="flex items-center flex-col sm:items-start">
+            <div className="flex justify-center w-full mb-2">
+              {getStatusIcon()}
             </div>
-            <Progress value={processingProgress} className="h-2" />
+            <DialogTitle>{getStatusTitle()}</DialogTitle>
+            <DialogDescription>{getStatusDescription()}</DialogDescription>
+          </DialogHeader>
 
-            {/* Show detailed progress bars */}
-            {renderDetailedProgress()}
-
-            {/* Show file progress if available */}
-            {totalFiles > 0 && (
-              <div className="flex items-center mt-2 text-xs text-muted-foreground">
-                <FileText className="h-3 w-3 mr-1" />
-                <span>
-                  {processedFiles} of {totalFiles} files processed
+          {/* Only show progress for processing state */}
+          {processingStatus === "processing" && (
+            <div className="my-4">
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-sm font-medium">Overall Progress</span>
+                <span className="text-sm text-muted-foreground">
+                  {processingProgress}%
                 </span>
               </div>
-            )}
+              <Progress value={processingProgress} className="h-2" />
 
-            {/* Show chunk information if available */}
-            {currentChunk !== null && totalChunks !== null && (
-              <div className="flex items-center mt-1 text-xs text-muted-foreground">
-                <Layers className="h-3 w-3 mr-1" />
-                <span>
-                  Chunk {currentChunk} of {totalChunks}
-                </span>
-              </div>
-            )}
-          </div>
-        )}
+              {/* Show detailed progress bars */}
+              {renderDetailedProgress()}
 
-        {/* Show results summary when complete */}
-        {processingStatus === "complete" && processingResults && (
-          <div className="my-4 text-sm">
-            <div className="flex flex-col space-y-1 text-muted-foreground">
-              <p>Total chunks created: {processingResults.totalChunks}</p>
-              <p>
-                Total characters processed: {processingResults.totalCharacters}
-              </p>
-              {processingResults.results &&
-                processingResults.results.length > 0 && (
-                  <details className="mt-2">
-                    <summary className="cursor-pointer">File details</summary>
-                    <ul className="ml-4 mt-1 space-y-1 list-disc">
-                      {processingResults.results.map((result, index) => (
-                        <li key={index}>
-                          {result.filename}: {result.chunks} chunks,{" "}
-                          {result.totalCharacters} characters
-                        </li>
-                      ))}
-                    </ul>
-                  </details>
-                )}
+              {/* Show file progress if available */}
+              {totalFiles > 0 && (
+                <div className="flex items-center mt-2 text-xs text-muted-foreground">
+                  <FileText className="h-3 w-3 mr-1" />
+                  <span>
+                    {processedFiles} of {totalFiles} files processed
+                  </span>
+                </div>
+              )}
+
+              {/* Show chunk information if available */}
+              {currentChunk !== null && totalChunks !== null && (
+                <div className="flex items-center mt-1 text-xs text-muted-foreground">
+                  <Layers className="h-3 w-3 mr-1" />
+                  <span>
+                    Chunk {currentChunk} of {totalChunks}
+                  </span>
+                </div>
+              )}
             </div>
-          </div>
-        )}
-
-        {/* Debug info in collapsible section */}
-        <details className="text-xs text-muted-foreground mt-2 mb-2">
-          <summary className="flex items-center cursor-pointer">
-            <Info className="h-3 w-3 mr-1" />
-            Debug Info
-          </summary>
-          <div className="mt-1 pl-4 border-l-2 border-muted">
-            <p>Upload ID: {uploadId || "None"}</p>
-            <p>Processing ID: {processingId || "None"}</p>
-            <p>Status: {processingStatus}</p>
-            <p>Server Status: {serverStatus || "None"}</p>
-            <p>Last Update: {lastUpdate}</p>
-          </div>
-        </details>
-
-        <DialogFooter className="mt-4">
-          {processingStatus === "complete" ? (
-            <Button onClick={handleComplete} className="w-full">
-              OK
-            </Button>
-          ) : processingStatus === "error" ? (
-            <Button onClick={handleClose} className="w-full">
-              Close
-            </Button>
-          ) : (
-            <Button disabled className="w-full">
-              <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-              Processing...
-            </Button>
           )}
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+
+          {/* Show results summary when complete */}
+          {processingStatus === "complete" && processingResults && (
+            <div className="my-4 text-sm">
+              <div className="flex flex-col space-y-1 text-muted-foreground">
+                <p>Total chunks created: {processingResults.totalChunks}</p>
+                <p>
+                  Total characters processed:{" "}
+                  {processingResults.totalCharacters}
+                </p>
+                {processingResults.results &&
+                  processingResults.results.length > 0 && (
+                    <details className="mt-2">
+                      <summary className="cursor-pointer">File details</summary>
+                      <ul className="ml-4 mt-1 space-y-1 list-disc">
+                        {processingResults.results.map((result, index) => (
+                          <li key={index}>
+                            {result.filename}: {result.chunks} chunks,{" "}
+                            {result.totalCharacters} characters
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
+                  )}
+              </div>
+            </div>
+          )}
+
+          {/* Debug info in collapsible section */}
+          <details className="text-xs text-muted-foreground mt-2 mb-2">
+            <summary className="flex items-center cursor-pointer">
+              <Info className="h-3 w-3 mr-1" />
+              Debug Info
+            </summary>
+            <div className="mt-1 pl-4 border-l-2 border-muted">
+              <p>Upload ID: {uploadId || "None"}</p>
+              <p>Processing ID: {processingId || "None"}</p>
+              <p>Status: {processingStatus}</p>
+              <p>Server Status: {serverStatus || "None"}</p>
+              <p>Last Update: {lastUpdate}</p>
+            </div>
+          </details>
+
+          <DialogFooter className="mt-4">
+            {processingStatus === "complete" ? (
+              <div className="w-full text-center text-sm text-muted-foreground">
+                <RefreshCw className="h-4 w-4 mx-auto mb-2 animate-spin" />
+                Creating Training Plan...
+              </div>
+            ) : processingStatus === "error" ? (
+              <Button onClick={handleClose} className="w-full">
+                Close
+              </Button>
+            ) : (
+              <Button disabled className="w-full">
+                <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                Processing...
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Training Plan Modal */}
+      <TrainingPlanModal
+        isOpen={isTrainingPlanModalOpen}
+        setIsOpen={setIsTrainingPlanModalOpen}
+        fileIds={fileIds}
+      />
+    </>
   );
 };
 
+// Add a default export for ProcessingModal
 export default ProcessingModal;

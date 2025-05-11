@@ -4,6 +4,7 @@ import type { FormRule, Landmark, Workout } from "@/types";
 import { Plus } from "lucide-react";
 import { useState } from "react";
 import { BrowserRouter, Link, Route, Routes } from "react-router-dom";
+
 import "./App.css";
 import { FormRuleComponent } from "./components/form-rule";
 import { LandmarkCanvas } from "./components/landmark-canvas";
@@ -14,6 +15,7 @@ import { Textarea } from "./components/ui/textarea";
 import { useToast } from "./components/ui/use-toast";
 import { saveWorkout } from "./lib/supabase";
 import DocumentsPage from "./pages/DocumentsPage";
+import WorkoutPlanPage from "./pages/WorkoutPlanPage";
 
 function WorkoutBuilder() {
   const { toast } = useToast();
@@ -34,10 +36,8 @@ function WorkoutBuilder() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // For canvas visualization
-  const [currentImage, setCurrentImage] = useState<HTMLImageElement | null>(
-    null,
-  );
-  const [currentResults, setCurrentResults] = useState<any>(null);
+  const [currentImage] = useState<HTMLImageElement | null>(null);
+  const [currentResults] = useState<any>(null);
 
   const handleStartPoseDetected = (landmarks: Landmark[]) => {
     setStartPoseLandmarks(landmarks);
@@ -163,7 +163,7 @@ function WorkoutBuilder() {
     <div className="min-h-screen bg-gray-100">
       <header className="bg-primary text-primary-foreground py-8">
         <div className="container mx-auto text-center">
-          <h1 className="text-3xl font-bold">FormForge</h1>
+          <h1 className="text-3xl font-bold">Gradatrim</h1>
           <p className="text-xl mt-2">Custom Workout Creator</p>
         </div>
       </header>
@@ -304,7 +304,7 @@ export default function App() {
         <nav className="bg-primary text-primary-foreground">
           <div className="container mx-auto px-4 py-2 flex items-center justify-between">
             <Link to="/" className="font-bold text-lg">
-              FormForge
+              Gradatrim
             </Link>
             <div className="space-x-4">
               <Link to="/" className="hover:underline">
@@ -320,6 +320,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<WorkoutBuilder />} />
           <Route path="/documents" element={<DocumentsPage />} />
+          <Route path="/workout-plan" element={<WorkoutPlanPage />} />
         </Routes>
 
         <Toaster />

@@ -21,7 +21,7 @@ const DocumentsPage: React.FC = () => {
     <div className="min-h-screen bg-gray-100">
       <header className="bg-primary text-primary-foreground py-8">
         <div className="container mx-auto text-center">
-          <h1 className="text-3xl font-bold">FormForge</h1>
+          <h1 className="text-3xl font-bold">Gradatrim</h1>
           <p className="text-xl mt-2">Document Manager</p>
         </div>
       </header>
