@@ -14,7 +14,7 @@ interface FormRuleProps {
 
 export function FormRuleComponent({ rule, onChange, onRemove }: FormRuleProps) {
   return (
-    <Card className="p-4 mb-4 bg-gray-50">
+    <Card className="p-4 mb-4">
       <div className="flex justify-between items-start">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 w-full">
           <div className="space-y-2">

@@ -37,7 +37,7 @@ function WorkoutBuilder() {
 
   // For canvas visualization
   const [currentImage] = useState<HTMLImageElement | null>(null);
-  const [currentResults] = useState<any>(null);
+  const [currentResults, setCurrentResults] = useState<any>(null);
 
   const handleStartPoseDetected = (landmarks: Landmark[]) => {
     setStartPoseLandmarks(landmarks);
@@ -160,7 +160,7 @@ function WorkoutBuilder() {
   const isProcessing = isStartProcessing || isEndProcessing || isSubmitting;
 
   return (
-    <div className="min-h-screen bg-gray-100">
+    <div className="min-h-screen">
       <header className="bg-primary text-primary-foreground py-8">
         <div className="container mx-auto text-center">
           <h1 className="text-3xl font-bold">Gradatrim</h1>
@@ -300,7 +300,7 @@ function WorkoutBuilder() {
 export default function App() {
   return (
     <BrowserRouter>
-      <div>
+      <>
         <nav className="bg-primary text-primary-foreground">
           <div className="container mx-auto px-4 py-2 flex items-center justify-between">
             <Link to="/" className="font-bold text-lg">
@@ -324,7 +324,7 @@ export default function App() {
         </Routes>
 
         <Toaster />
-      </div>
+      </>
     </BrowserRouter>
   );
 }
