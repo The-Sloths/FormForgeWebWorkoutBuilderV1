@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { Toaster } from "@/components/ui/toaster";
-import type { FormRule, Landmark, Workout } from "@/types";
+import type { FormRule, Landmark, Workout, PoseLandmarkerResult } from "@/types";
 import { Plus } from "lucide-react";
 import { useState } from "react";
 import { BrowserRouter, Link, Route, Routes } from "react-router-dom";
@@ -36,7 +36,7 @@ function WorkoutBuilder() {
 
   // For canvas visualization
   const [currentImage] = useState<HTMLImageElement | null>(null);
-  const [currentResults, setCurrentResults] = useState<any>(null);
+  const [currentResults] = useState<PoseLandmarkerResult | null>(null);
 
   const handleStartPoseDetected = (landmarks: Landmark[]) => {
     setStartPoseLandmarks(landmarks);

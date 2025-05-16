@@ -108,38 +108,18 @@ export interface ProcessingErrorData {
   message?: string;
 }
 
-// Helper function to generate UUID v4 compatible with backend
-function generateUUIDv4(): string {
-  // Implementation based on RFC4122 version 4
-  const hexDigits = "0123456789abcdef";
-  let uuid = "";
-
-  for (let i = 0; i < 36; i++) {
-    if (i === 8 || i === 13 || i === 18 || i === 23) {
-      uuid += "-";
-    } else if (i === 14) {
-      uuid += "4"; // version 4
-    } else if (i === 19) {
-      uuid += hexDigits[(Math.random() * 4) | 8]; // variant bits
-    } else {
-      uuid += hexDigits[Math.floor(Math.random() * 16)];
-    }
-  }
-
-  return uuid;
-}
-
 // Map to track relationship between client IDs and server IDs
 class SocketService {
   private socket: Socket | null = null;
   private initialized = false;
-  private isConnected = false;
+  private isConnected = false; // Add missing property
+
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
   // Track active rooms to avoid duplicate joins/leaves
   private activeRooms = new Set<string>();
   // Map to track client-to-server ID relationships
-  private idMappings = new Map<string, string>();
+  private idMappings = new Map<string, string>(); // Add missing property
 
   initialize(): Socket {
     if (!this.initialized) {
@@ -152,42 +132,37 @@ class SocketService {
         timeout: 20000,
       });
 
-      // Add connection event handlers for debugging
+      // Add connection event handlers
       this.socket.on("connect", () => {
-        console.log("Socket.IO connected");
         this.isConnected = true;
         this.reconnectAttempts = 0; // Reset reconnect attempts on successful connection
       });
 
-      this.socket.on("disconnect", (reason) => {
-        console.log(`Socket.IO disconnected: ${reason}`);
+      this.socket.on("disconnect", () => {
+        // console.log(`Socket.IO disconnected: ${reason}`); // Can be noisy
         this.isConnected = false;
-        // Clear active rooms on disconnect
         this.activeRooms.clear();
       });
 
-      this.socket.on("connect_error", (error) => {
+      this.socket.on("connect_error", (error: Error) => {
         console.error("Socket.IO connection error:", error);
         this.reconnectAttempts++;
-
         if (this.reconnectAttempts >= this.maxReconnectAttempts) {
           console.error(
-            `Max reconnection attempts (${this.maxReconnectAttempts}) reached. Giving up.`,
+            `Max reconnection attempts (${this.maxReconnectAttempts}) reached.`,
           );
-          // You could show a user-friendly message here or try alternative communication
         }
       });
 
-      this.socket.io.on("reconnect", (attempt) => {
-        console.log(`Socket.IO reconnected after ${attempt} attempts`);
+      this.socket.io.on("reconnect", () => {
         this.isConnected = true;
       });
 
-      this.socket.io.on("reconnect_attempt", (attempt) => {
-        console.log(`Socket.IO reconnection attempt #${attempt}`);
+      this.socket.io.on("reconnect_attempt", () => {
+        // console.log(`Socket.IO reconnection attempt`); // Can be noisy
       });
 
-      this.socket.io.on("reconnect_error", (error) => {
+      this.socket.io.on("reconnect_error", (error: Error) => {
         console.error("Socket.IO reconnection error:", error);
       });
 
@@ -196,7 +171,6 @@ class SocketService {
       });
 
       this.initialized = true;
-      console.log("Socket.IO initialized");
     }
 
     return this.socket!;
@@ -209,237 +183,80 @@ class SocketService {
     return this.socket!;
   }
 
-  // Map a server ID to a client ID
-  mapServerToClientId(serverId: string, clientId: string): void {
-    this.idMappings.set(serverId, clientId);
-    console.log(`Mapped server ID ${serverId} to client ID ${clientId}`);
-  }
-
-  // Get the client ID for a server ID (or return the server ID if no mapping exists)
-  getClientId(serverId: string): string {
-    return this.idMappings.get(serverId) || serverId;
-  }
-
-  // Get the server ID for a client ID (or return the client ID if no mapping exists)
-  getServerId(clientId: string): string {
-    // Check if this is a direct server ID
-    if (this.activeRooms.has(clientId)) {
-      return clientId;
-    }
-
-    // Find the mapping
-    for (const [serverId, mappedClientId] of this.idMappings.entries()) {
-      if (mappedClientId === clientId) {
-        return serverId;
-      }
-    }
-
-    // No mapping found, return the input ID
-    return clientId;
-  }
-
   joinUploadRoom(uploadId: string): void {
     const socket = this.getSocket();
 
     if (!this.isConnected) {
-      console.warn(`Cannot join room for ${uploadId}, socket not connected`);
+      console.warn(`SocketService: Cannot join room for ${uploadId}, socket not connected.`);
       return;
     }
 
-    // Don't join if already in this room
     if (this.activeRooms.has(uploadId)) {
-      console.log(`[SocketService DEBUG] joinUploadRoom: Already in activeRooms for ${uploadId}. Current activeRooms:`, new Set(this.activeRooms));
-      // Even if already in activeRooms, ensure server knows, in case of client/server desync
-      // socket.emit("joinUploadRoom", uploadId); // Re-emitting might cause issues if server doesn't handle it well
+      // console.log(`SocketService: Already in room: ${uploadId}`);
       return;
     }
-
-    console.log(`[SocketService DEBUG] joinUploadRoom: Attempting to join room for ${uploadId}. isConnected: ${this.isConnected}. Current activeRooms:`, new Set(this.activeRooms));
-    // Add to active rooms - store without prefix
     this.activeRooms.add(uploadId);
-    console.log(`[SocketService DEBUG] joinUploadRoom: Added ${uploadId} to activeRooms. New activeRooms:`, new Set(this.activeRooms));
-
-    // Emit join event - server will add prefix
     socket.emit("joinUploadRoom", uploadId);
-    console.log(`[SocketService] Client ${socket.id} emitted joinUploadRoom for: ${uploadId}`);
-
-    // Debug listener to confirm room joining
-    socket.once("ACK:joinUploadRoom", (data) => {
-      console.log(`[SocketService] ACK:joinUploadRoom received for ${uploadId}:`, data);
-    });
   }
 
   leaveUploadRoom(uploadId: string): void {
     const socket = this.getSocket();
 
     if (!this.isConnected) {
-      console.warn(`[SocketService DEBUG] leaveUploadRoom: Cannot leave room for ${uploadId}, socket not connected.`);
+      // console.warn(`SocketService: Cannot leave room for ${uploadId}, socket not connected.`);
       return;
     }
 
-    console.log(`[SocketService DEBUG] leaveUploadRoom: Attempting to leave room for ${uploadId}. isConnected: ${this.isConnected}. Current activeRooms:`, new Set(this.activeRooms));
-    // Don't leave if not in this room
     if (!this.activeRooms.has(uploadId)) {
-      console.log(`[SocketService DEBUG] leaveUploadRoom: Not in activeRooms for ${uploadId}, no need to leave. Current activeRooms:`, new Set(this.activeRooms));
+      // console.log(`SocketService: Not in room: ${uploadId}, no need to leave.`);
       return;
     }
-
-    // Remove from active rooms
     this.activeRooms.delete(uploadId);
-    console.log(`[SocketService DEBUG] leaveUploadRoom: Removed ${uploadId} from activeRooms. New activeRooms:`, new Set(this.activeRooms));
-
-    // Emit leave event - server will handle the prefix
     socket.emit("leaveUploadRoom", uploadId);
-    console.log(`[SocketService] Client ${socket.id} emitted leaveUploadRoom for: ${uploadId}`);
   }
 
   onUploadProgress(callback: (data: UploadProgressData) => void): void {
     const socket = this.getSocket();
     // Remove any existing listeners for this event to prevent duplicates
     socket.off("uploadProgress");
-
-    socket.on("uploadProgress", (data: UploadProgressData) => {
-      console.log("Upload progress event received:", data);
-
-      // Check if we have a client ID mapped for this server ID
-      const clientId = this.getClientId(data.uploadId);
-
-      callback({
-        ...data,
-        uploadId: clientId, // Use the client ID if available
-      });
-    });
-
-    console.log("Registered uploadProgress event listener");
+    socket.on("uploadProgress", callback);
   }
 
   onUploadComplete(callback: (data: UploadCompleteData) => void): void {
     const socket = this.getSocket();
-    // Remove any existing listeners for this event to prevent duplicates
     socket.off("uploadComplete");
-
-    socket.on("uploadComplete", (data: UploadCompleteData) => {
-      console.log("Upload complete event received:", data);
-
-      // Check if we have a client ID mapped for this server ID
-      const clientId = this.getClientId(data.uploadId);
-
-      callback({
-        ...data,
-        uploadId: clientId, // Use the client ID if available
-      });
-    });
-
-    console.log("Registered uploadComplete event listener");
+    socket.on("uploadComplete", callback);
   }
 
   onUploadError(callback: (data: UploadErrorData) => void): void {
     const socket = this.getSocket();
-    // Remove any existing listeners for this event to prevent duplicates
     socket.off("uploadError");
-
-    socket.on("uploadError", (data: UploadErrorData) => {
-      console.log("Upload error event received:", data);
-
-      // Check if we have a client ID mapped for this server ID
-      const clientId = this.getClientId(data.uploadId);
-
-      callback({
-        ...data,
-        uploadId: clientId, // Use the client ID if available
-      });
-    });
-
-    console.log("Registered uploadError event listener");
+    socket.on("uploadError", callback);
   }
 
   // Processing files
   onProcessingStart(callback: (data: ProcessingStartData) => void): void {
     const socket = this.getSocket();
-    // Remove any existing listeners for this event to prevent duplicates
     socket.off("processingStart");
-
-    socket.on("processingStart", (data: ProcessingStartData) => {
-      console.log("Processing start event received:", data);
-
-      // Store the server's uploadId and the processing ID relationship
-      // If we have an existing client ID for this upload, use that mapping
-      const clientId = this.getClientId(data.uploadId);
-
-      // If different, store the new relationship
-      if (clientId !== data.uploadId) {
-        console.log(
-          `Using existing mapping: server ${data.uploadId} -> client ${clientId}`,
-        );
-      }
-
-      callback({
-        ...data,
-        uploadId: clientId, // Use the client ID in the callback
-      });
-    });
-
-    console.log("Registered processingStart event listener");
+    socket.on("processingStart", callback);
   }
 
   onProcessingProgress(callback: (data: ProcessingProgressData) => void): void {
     const socket = this.getSocket();
-    // Remove any existing listeners for this event to prevent duplicates
     socket.off("processingProgress");
-
-    socket.on("processingProgress", (data: ProcessingProgressData) => {
-      console.log("Processing progress event received:", data);
-
-      // Check if we have a client ID mapped for this server ID
-      const clientId = this.getClientId(data.uploadId);
-
-      callback({
-        ...data,
-        uploadId: clientId, // Use the client ID if available
-      });
-    });
-
-    console.log("Registered processingProgress event listener");
+    socket.on("processingProgress", callback);
   }
 
   onProcessingComplete(callback: (data: ProcessingCompleteData) => void): void {
     const socket = this.getSocket();
-    // Remove any existing listeners for this event to prevent duplicates
     socket.off("processingComplete");
-
-    socket.on("processingComplete", (data: ProcessingCompleteData) => {
-      console.log("Processing complete event received:", data);
-
-      // Check if we have a client ID mapped for this server ID
-      const clientId = this.getClientId(data.uploadId);
-
-      callback({
-        ...data,
-        uploadId: clientId, // Use the client ID if available
-      });
-    });
-
-    console.log("Registered processingComplete event listener");
+    socket.on("processingComplete", callback);
   }
 
   onProcessingError(callback: (data: ProcessingErrorData) => void): void {
     const socket = this.getSocket();
-    // Remove any existing listeners for this event to prevent duplicates
     socket.off("processingError");
-
-    socket.on("processingError", (data: ProcessingErrorData) => {
-      console.log("Processing error event received:", data);
-
-      // Check if we have a client ID mapped for this server ID
-      const clientId = this.getClientId(data.uploadId);
-
-      callback({
-        ...data,
-        uploadId: clientId, // Use the client ID if available
-      });
-    });
-
-    console.log("Registered processingError event listener");
+    socket.on("processingError", callback);
   }
 
   disconnect(): void {
@@ -447,9 +264,9 @@ class SocketService {
       this.socket.disconnect();
       this.initialized = false;
       this.isConnected = false;
-      this.activeRooms.clear(); // Clear active rooms on disconnect
-      this.idMappings.clear(); // Clear ID mappings on disconnect
-      console.log("Socket disconnected");
+      this.activeRooms.clear();
+      this.idMappings.clear();
+      // console.log("Socket disconnected"); // Can be noisy
     }
   }
 
@@ -459,17 +276,14 @@ class SocketService {
     return uuidv4();
   }
 
-  // Debugging mode for all socket events
-  enableDebugMode(): void {
-    const socket = this.getSocket();
-
-    // Listen for all events for debugging purposes
-    socket.onAny((eventName, ...args) => {
-      console.log(`[SOCKET] Event received: ${eventName}`, args);
-    });
-
-    console.log("Socket debug mode enabled");
-  }
+  // enableDebugMode can be uncommented if needed for deep debugging
+  // enableDebugMode(): void {
+  //   const socket = this.getSocket();
+  //   socket.onAny((eventName, ...args) => {
+  //     console.log(`[SOCKET_DEBUG] Event: ${eventName}`, args);
+  //   });
+  //   console.log("Socket debug mode enabled");
+  // }
 }
 
 // Create a singleton instance

@@ -1,6 +1,4 @@
 import React, {
-  createContext,
-  useContext,
   useState,
   useEffect,
   useCallback,
@@ -16,79 +14,9 @@ import {
   type ProcessingErrorData,
   type ProcessingStatus as SocketProcessingStatus,
 } from "@/lib/socket";
+import { type ProcessingStatus, type ProcessingResults, type FileProcessingContextType } from "./file-processing-utils";
+import { mapSocketStatusToUiStatus, FileProcessingContext } from "./file-processing-utils";
 import { useToast } from "@/components/ui/use-toast";
-
-// Type for UI processing status (slightly different from socket status)
-type ProcessingStatus = "idle" | "processing" | "complete" | "error";
-
-// Define interfaces for the processing results
-interface ProcessingFileResult {
-  fileId: string;
-  filename: string;
-  chunks: number;
-  totalCharacters: number;
-}
-
-interface ProcessingResults {
-  totalChunks: number;
-  totalCharacters: number;
-  results: ProcessingFileResult[];
-}
-
-// Map socket status to UI status for display
-const mapSocketStatusToUiStatus = (
-  status?: SocketProcessingStatus,
-): ProcessingStatus => {
-  if (!status) return "processing";
-
-  switch (status) {
-    case "complete":
-      return "complete";
-    case "error":
-    case "partial_error":
-      return "error";
-    case "partial_complete":
-      return "complete"; // Still show as complete in UI
-    case "analyzing":
-    case "processing":
-    case "embedding":
-    case "file_complete":
-    default:
-      return "processing";
-  }
-};
-
-interface FileProcessingContextState {
-  processingId: string | null;
-  uploadId: string | null;
-  processingStatus: ProcessingStatus;
-  processingProgress: number;
-  currentFile: string | null;
-  processedFiles: number;
-  totalFiles: number;
-  processingError: string | null;
-  processingResults: ProcessingResults | null;
-  isModalOpen: boolean;
-  currentChunk: number | null;
-  totalChunks: number | null;
-  embeddingProgress: number | null;
-  fileProgress: number | null;
-  statusMessage: string | null;
-  serverStatus: SocketProcessingStatus | null;
-}
-
-interface FileProcessingContextActions {
-  startProcessing: (uploadId: string, fileIds: string[]) => Promise<void>;
-  setIsModalOpen: (open: boolean) => void;
-  resetProcessing: () => void;
-}
-
-type FileProcessingContextType = FileProcessingContextState &
-  FileProcessingContextActions;
-
-const FileProcessingContext = createContext<
-  FileProcessingContextType | undefined
->(undefined);
 
 // Define the base URL for API calls, respecting VITE_API_URL
 const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
@@ -130,15 +58,9 @@ export const FileProcessingProvider: React.FC<FileProcessingProviderProps> = ({
   // Use refs for event handlers to avoid dependency issues with useEffect
   const handlersRef = useRef({
     handleProcessingStart: (data: ProcessingStartData) => {
-      console.log(
-        `Processing start event received for uploadId: ${data.uploadId}`,
-      );
-
       // IMPORTANT FIX: Be more lenient in accepting events
       // Accept the event if it matches our uploadId OR if we don't have an uploadId yet
       if (data.uploadId === uploadId || (data.uploadId && !uploadId)) {
-        console.log("Processing start event matches our uploadId", data);
-
         // If our uploadId isn't set yet, set it now
         if (!uploadId && data.uploadId) {
           setUploadId(data.uploadId);
@@ -164,26 +86,15 @@ export const FileProcessingProvider: React.FC<FileProcessingProviderProps> = ({
           title: "Processing Started",
           description: `Started processing ${data.totalFiles} files`,
         });
-      } else {
-        console.log(
-          `UploadId mismatch in processingStart: event=${data.uploadId}, state=${uploadId}`,
-        );
       }
     },
 
     handleProcessingProgress: (data: ProcessingProgressData) => {
-      console.log(
-        `[CONTEXT_DEBUG] handleProcessingProgress: Received raw event data for uploadId: ${data.uploadId}`, data
-      );
-
       // IMPORTANT FIX: Be more lenient in accepting events
       // Accept the event if it matches our uploadId OR if we don't have an uploadId yet
       if (data.uploadId === uploadId || (data.uploadId && !uploadId)) {
-        console.log("[CONTEXT_DEBUG] handleProcessingProgress: Event matches context uploadId. Updating state.", { currentContextUploadId: uploadId, eventData: data });
-
         // If our uploadId isn't set yet, set it now
         if (!uploadId && data.uploadId) {
-          console.log(`[CONTEXT_DEBUG] handleProcessingProgress: Setting context uploadId to: ${data.uploadId}`);
           setUploadId(data.uploadId);
         }
 
@@ -231,29 +142,16 @@ export const FileProcessingProvider: React.FC<FileProcessingProviderProps> = ({
         }
         if (data.message) {
           setStatusMessage(data.message);
-          console.log(`[CONTEXT_DEBUG] handleProcessingProgress: StatusMessage updated to: "${data.message}"`);
         }
-        console.log(`[CONTEXT_DEBUG] handleProcessingProgress: Final processingProgress state after update: ${progress}%`);
-      } else {
-        console.log(
-          `[CONTEXT_DEBUG] handleProcessingProgress: UploadId mismatch. Event: ${data.uploadId}, Context: ${uploadId}. Ignoring event.`
-        );
       }
     },
 
     handleProcessingComplete: (data: ProcessingCompleteData) => {
-      console.log(
-        `[CONTEXT_DEBUG] handleProcessingComplete: Received raw event data for uploadId: ${data.uploadId}`, data
-      );
-
       // IMPORTANT FIX: Be more lenient in accepting events
       // Accept the event if it matches our uploadId OR if we don't have an uploadId yet
       if (data.uploadId === uploadId || (data.uploadId && !uploadId)) {
-        console.log("[CONTEXT_DEBUG] handleProcessingComplete: Event matches context uploadId. Updating state.", { currentContextUploadId: uploadId, eventData: data });
-
         // If our uploadId isn't set yet, set it now
         if (!uploadId && data.uploadId) {
-          console.log(`[CONTEXT_DEBUG] handleProcessingComplete: Setting context uploadId to: ${data.uploadId}`);
           setUploadId(data.uploadId);
         }
 
@@ -262,17 +160,14 @@ export const FileProcessingProvider: React.FC<FileProcessingProviderProps> = ({
         setProcessingProgress(100);
         setProcessedFiles(data.processedFiles);
         setTotalFiles(data.totalFiles);
-        console.log("[CONTEXT_DEBUG] handleProcessingComplete: Status set to 'complete', progress to 100.");
 
         // Store the results
         const newProcessingResults = {
           totalChunks: data.totalChunks,
           totalCharacters: data.totalCharacters,
-          results: data.results, // Critical: check structure of data.results
+          results: data.results,
         };
         setProcessingResults(newProcessingResults);
-        console.log("[CONTEXT_DEBUG] handleProcessingComplete: processingResults set. Raw data.results:", data.results, "New state:", newProcessingResults);
-
 
         // Set additional information if available
         if (data.status) {
@@ -287,23 +182,13 @@ export const FileProcessingProvider: React.FC<FileProcessingProviderProps> = ({
           title: "Processing Complete",
           description: `Successfully processed ${data.processedFiles} files with ${data.totalChunks} chunks`,
         });
-      } else {
-        console.log(
-          `[CONTEXT_DEBUG] handleProcessingComplete: UploadId mismatch. Event: ${data.uploadId}, Context: ${uploadId}. Ignoring event.`
-        );
       }
     },
 
     handleProcessingError: (data: ProcessingErrorData) => {
-      console.log(
-        `[CONTEXT_DEBUG] handleProcessingError: Received raw event data for uploadId: ${data.uploadId}`, data
-      );
-
       // IMPORTANT FIX: Be more lenient in accepting events
       // Accept the event if it matches our uploadId OR if we don't have an uploadId yet
       if (data.uploadId === uploadId || (data.uploadId && !uploadId)) {
-        console.log("Processing error event matches our uploadId", data);
-
         // If our uploadId isn't set yet, set it now
         if (!uploadId && data.uploadId) {
           setUploadId(data.uploadId);
@@ -327,10 +212,6 @@ export const FileProcessingProvider: React.FC<FileProcessingProviderProps> = ({
           description: data.error,
           variant: "destructive",
         });
-      } else {
-        console.log(
-          `[CONTEXT_DEBUG] handleProcessingError: UploadId mismatch. Event: ${data.uploadId}, Context: ${uploadId}. Ignoring event.`
-        );
       }
     },
   });
@@ -338,30 +219,28 @@ export const FileProcessingProvider: React.FC<FileProcessingProviderProps> = ({
   // Set up socket event listeners when uploadId changes
   useEffect(() => {
     if (!uploadId) {
-      console.log("No uploadId, skipping socket event setup");
       return;
     }
 
-    console.log(`Setting up socket event listeners for uploadId: ${uploadId}`);
-
     // Enable debug mode to track all socket events
-    if (typeof socketService.enableDebugMode === "function") {
-      socketService.enableDebugMode();
-    }
+    // No longer calling enableDebugMode() here to reduce console noise in production.
+    // It can be called manually from DocumentsPage or elsewhere if specific debugging is needed.\n    // if (typeof socketService.enableDebugMode === \"function\") {\n    //   socketService.enableDebugMode();\n    // }\n\n    const currentHandlers = handlersRef.current;\n\n    // Register event listeners\n    socketService.onProcessingStart(currentHandlers.handleProcessingStart);\n    socketService.onProcessingProgress(currentHandlers.handleProcessingProgress);\n    socketService.onProcessingComplete(currentHandlers.handleProcessingComplete);\n    socketService.onProcessingError(currentHandlers.handleProcessingError);\n\n    return () => {\n      console.log(\n        `Cleaning up socket event listeners for uploadId: ${uploadId}`,\n      );\n\n      // Get a reference to the socket for cleanup\n      const socket = socketService.getSocket();\n\n      // Clean up listeners\n      socket.off(\"processingStart\");\n      socket.off(\"processingProgress\");\n      socket.off(\"processingComplete\");\n      socket.off(\"processingError\");\n    };\n  }, [uploadId]);
+    // It can be called manually from DocumentsPage or elsewhere if specific debugging is needed.
+    // if (typeof socketService.enableDebugMode === "function") {
+    //   socketService.enableDebugMode();
+    // }
+const currentHandlers = handlersRef.current;
 
-    // Ensure we're using reference stable handlers
-    const handlers = handlersRef.current;
+// Register event listeners
+socketService.onProcessingStart(currentHandlers.handleProcessingStart);
+socketService.onProcessingProgress(currentHandlers.handleProcessingProgress);
+socketService.onProcessingComplete(currentHandlers.handleProcessingComplete);
+socketService.onProcessingError(currentHandlers.handleProcessingError);
 
-    // Register event listeners
-    socketService.onProcessingStart(handlers.handleProcessingStart);
-    socketService.onProcessingProgress(handlers.handleProcessingProgress);
-    socketService.onProcessingComplete(handlers.handleProcessingComplete);
-    socketService.onProcessingError(handlers.handleProcessingError);
-
-    return () => {
-      console.log(
-        `Cleaning up socket event listeners for uploadId: ${uploadId}`,
-      );
+return () => {
+  console.log(
+    `Cleaning up socket event listeners for uploadId: ${uploadId}`
+  );
 
       // Get a reference to the socket for cleanup
       const socket = socketService.getSocket();
@@ -390,27 +269,13 @@ export const FileProcessingProvider: React.FC<FileProcessingProviderProps> = ({
         return;
       }
 
-      // Store the original client-generated uploadId
-      const clientUploadId = uploadId;
-
       try {
-        console.log("Starting processing with:", {
-          uploadId: clientUploadId,
-          fileIds,
-        });
-
         // IMPORTANT FIX: Set the uploadId in the state immediately
         // This ensures that when socket events arrive, they will match the uploadId in the state
-        setUploadId(clientUploadId);
-
-        // Enable socket debug mode to see all events
-        if (typeof socketService.enableDebugMode === "function") {
-          socketService.enableDebugMode();
-        }
+        setUploadId(uploadId);
 
         // Make sure we're in the upload room with the correct ID
-        console.log(`Joining upload room for processing: ${clientUploadId}`);
-        socketService.joinUploadRoom(clientUploadId);
+        socketService.joinUploadRoom(uploadId);
 
         // Reset other state values
         setProcessingStatus("processing");
@@ -425,40 +290,26 @@ export const FileProcessingProvider: React.FC<FileProcessingProviderProps> = ({
         setIsModalOpen(true);
 
         // Call the API to start processing
-        console.log("Making API call to start processing");
-        const response = await axios.post<{
-          message: string;
-          processingId: string;
-          uploadId: string;
-          totalFiles: number;
-          files: Array<{
-            fileId: string;
-            filename: string;
-          }>;
-        }>(`${API_BASE_URL}/api/files/process`, {
-          uploadId: clientUploadId,
-          fileIds: fileIds,
-        });
-
-        console.log("Processing API response:", response.data);
+        const response = await axios.post(
+          `${API_BASE_URL}/api/files/process`,
+          {
+            uploadId: uploadId,
+            fileIds: fileIds,
+          },
+        );
 
         // Extract the server-assigned uploadId and processingId from the response
         const serverUploadId = response.data.uploadId;
         const serverProcessingId = response.data.processingId;
 
         // Check if the server returned a different uploadId than what we sent
-        if (serverUploadId && serverUploadId !== clientUploadId) {
-          console.log(`Server assigned different uploadId: ${serverUploadId}`);
-
+        if (serverUploadId && serverUploadId !== uploadId) {
           // Add mapping between server and client IDs
-          socketService.mapServerToClientId(serverUploadId, clientUploadId);
+          // socketService.mapServerToClientId(serverUploadId, uploadId); // Method removed from socketService
 
-          // CRITICAL CHANGE: DON'T leave the room with the client ID
+          // CRITICAL CHANGE: DON\'T leave the room with the client ID
           // We need to stay in both rooms to ensure we get all events
           // Just join the additional room with the server ID
-          console.log(
-            `Joining additional room with server ID: ${serverUploadId}`,
-          );
           socketService.joinUploadRoom(serverUploadId);
 
           // Update state with server-assigned IDs (already set the client ID earlier)
@@ -479,7 +330,7 @@ export const FileProcessingProvider: React.FC<FileProcessingProviderProps> = ({
         );
       }
     },
-    [processingStatus, toast],
+    [processingStatus],
   );
 
   // Reset processing state
@@ -501,6 +352,7 @@ export const FileProcessingProvider: React.FC<FileProcessingProviderProps> = ({
     setServerStatus(null);
   }, []);
 
+  // Define the context value object inside the component
   const contextValue: FileProcessingContextType = {
     processingId,
     uploadId,
@@ -530,13 +382,4 @@ export const FileProcessingProvider: React.FC<FileProcessingProviderProps> = ({
   );
 };
 
-// Custom hook to use the FileProcessingContext
-export const useFileProcessing = (): FileProcessingContextType => {
-  const context = useContext(FileProcessingContext);
-  if (context === undefined) {
-    throw new Error(
-      "useFileProcessing must be used within a FileProcessingProvider",
-    );
-  }
-  return context;
-};
+

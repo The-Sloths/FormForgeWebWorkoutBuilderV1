@@ -1,6 +1,5 @@
 import React, {
-  createContext,
-  useContext,
+
   useState,
   useEffect,
   useCallback,
@@ -14,6 +13,13 @@ import {
   type UploadErrorData,
 } from "@/lib/socket";
 import { useToast } from "@/components/ui/use-toast";
+import { UploadContext } from "./upload-context";
+
+// Define types for the API response file
+interface UploadApiResponseFile {
+  fileId: string;
+  filename: string;
+}
 
 // Define types for the context
 interface UploadFile {
@@ -40,9 +46,7 @@ interface UploadContextActions {
   retryUpload: (fileId: string) => Promise<void>;
 }
 
-type UploadContextType = UploadContextState & UploadContextActions;
-
-const UploadContext = createContext<UploadContextType | undefined>(undefined);
+export type UploadContextType = UploadContextState & UploadContextActions;
 
 interface UploadProviderProps {
   children: ReactNode;
@@ -74,29 +78,18 @@ export const UploadProvider: React.FC<UploadProviderProps> = ({ children }) => {
     };
 
     const handleUploadComplete = (data: UploadCompleteData) => {
-      console.log("Upload complete data received:", data);
-
       // Log if fileId is present in the data
-      if (data.fileId) {
-        console.log(`Received fileId: ${data.fileId}`);
-      } else {
+      if (!data.fileId) {
         console.warn(
           `No fileId received in upload complete data for uploadId: ${data.uploadId}`,
         );
       }
 
-      // Store the direct response to help with debugging
       const responseFileId = data.fileId;
 
       setFiles((prevFiles) => {
         const updatedFiles = prevFiles.map((file) => {
           if (file.uploadId === data.uploadId) {
-            console.log("Updating file with response:", {
-              originalId: file.id,
-              uploadId: file.uploadId,
-              newFileId: responseFileId,
-            });
-
             return {
               ...file,
               progress: 100,
@@ -111,7 +104,6 @@ export const UploadProvider: React.FC<UploadProviderProps> = ({ children }) => {
           (f) => f.uploadId === data.uploadId,
         );
         if (completedFile) {
-          console.log(`Updated file object:`, completedFile);
           toast({
             title: "Upload Complete",
             description: `"${completedFile.file.name}" was uploaded successfully.`,
@@ -227,7 +219,6 @@ export const UploadProvider: React.FC<UploadProviderProps> = ({ children }) => {
         };
       });
 
-      console.log("Added new files to upload queue:", newUploadFiles);
       setFiles((prevFiles) => [...prevFiles, ...newUploadFiles]);
     },
     [toast],
@@ -238,7 +229,8 @@ export const UploadProvider: React.FC<UploadProviderProps> = ({ children }) => {
     async (clientFileId: string) => { // Parameter is the client-side unique ID
       const fileToUpload = files.find((f) => f.id === clientFileId);
       if (!fileToUpload || fileToUpload.status === "uploading" || fileToUpload.status === "completed") {
-        console.log("File not found, already uploading, or completed:", clientFileId, fileToUpload?.status);
+        // Optionally keep a log for this case if it's important for operational monitoring
+        // console.log("UploadFile: File not found, already uploading, or completed:", clientFileId, fileToUpload?.status);
         return;
       }
 
@@ -257,9 +249,9 @@ export const UploadProvider: React.FC<UploadProviderProps> = ({ children }) => {
       );
 
       try {
-        console.log(
-          `Starting upload for client file ID ${clientFileId} (${fileToUpload.file.name})`,
-        );
+        // console.log(
+        //   `Starting upload for client file ID ${clientFileId} (${fileToUpload.file.name})`,
+        // );
 
         // Create FormData for the upload
         const formData = new FormData();
@@ -272,7 +264,7 @@ export const UploadProvider: React.FC<UploadProviderProps> = ({ children }) => {
           fileId: string; // Server-generated fileId
           uploadId: string; // Server-generated uploadId for this upload session
           status: string;
-          files: any[]; // Adjust if you have a specific type
+          files: UploadApiResponseFile[];
         }>(
           `${API_URL}/api/files/upload`,
           formData,
@@ -304,10 +296,6 @@ export const UploadProvider: React.FC<UploadProviderProps> = ({ children }) => {
         const serverGeneratedUploadId = response.data.uploadId;
         const serverGeneratedFileId = response.data.fileId;
 
-        console.log("Server HTTP upload response:", response.data);
-        console.log("Server-generated uploadId:", serverGeneratedUploadId);
-        console.log("Server-generated fileId:", serverGeneratedFileId);
-
         if (serverGeneratedUploadId && serverGeneratedFileId) {
           // Update the file in state with server-generated IDs
           setFiles((prevFiles) =>
@@ -325,7 +313,6 @@ export const UploadProvider: React.FC<UploadProviderProps> = ({ children }) => {
 
           // Join the socket.io room for this specific upload using server's uploadId
           socketService.joinUploadRoom(serverGeneratedUploadId);
-          console.log(`Joined socket room for uploadId: ${serverGeneratedUploadId}`);
         } else {
           console.warn("Server response missing uploadId or fileId", response.data);
           throw new Error("Invalid server response: Missing uploadId or fileId.");
@@ -432,11 +419,4 @@ export const UploadProvider: React.FC<UploadProviderProps> = ({ children }) => {
   );
 };
 
-// Custom hook to use the UploadContext
-export const useUpload = () => {
-  const context = useContext(UploadContext);
-  if (context === undefined) {
-    throw new Error("useUpload must be used within an UploadProvider");
-  }
-  return context;
-};
+

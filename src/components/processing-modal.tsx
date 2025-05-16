@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
-import { useFileProcessing } from "@/contexts/FileProcessingContext";
+import { useFileProcessing } from "@/hooks/useFileProcessing";
 import axios from "axios";
 import { io, Socket } from "socket.io-client"; // Import Socket type
 import { useNavigate } from "react-router-dom";
@@ -92,7 +92,7 @@ const TrainingPlanModal: React.FC<TrainingPlanModalProps> = ({
 
   // Set up socket listeners when planId is available and modal is open
   useEffect(() => {
-    // Only run if the modal is open and we have a planId
+    // Only run if the modal is open and we have a planId - Placeholder edit
     if (!isOpen || !planId) {
       // If the modal is closing or there's no planId, the cleanup function (return)
       // from a previous run (when isOpen was true and planId was set) should handle leaving the room.
@@ -102,44 +102,101 @@ const TrainingPlanModal: React.FC<TrainingPlanModalProps> = ({
     }
 
     // --- Join Room ---
-    console.log(`[TrainingPlanModal] Attempting to join workout plan room: workoutPlan:${planId}`);
     socket.emit("joinWorkoutPlanRoom", planId);
 
     // --- Define Handlers ---
     // These handlers will use the state values (planProgress, currentStep) as they are
     // at the time the event occurs, due to closure.
-    const handleProgress = (data: any) => {
-      if (data.planId === planId) { // Ensure event is for our current plan
-        console.log("[TrainingPlanModal] Workout Plan Progress Received:", data);
+    const handleProgress = (data: unknown) => {
+      // Type check the incoming data
+      if (typeof data !== "object" || data === null) {
+        console.error("Invalid data received for workoutPlanProgress");
+        return;
+      }
+      const progressData = data as {
+        planId?: string;
+        progress?: number;
+        step?: string;
+        status?: string;
+        message?: string;
+      }; // Type assertion based on expected data structure
+
+      if (progressData.planId === planId) {
+        // Ensure event is for our current plan
         setPlanProgress(
-          data.progress !== undefined ? data.progress : planProgress, // Use existing if undefined
+          progressData.progress !== undefined
+            ? progressData.progress
+            : planProgress, // Use existing if undefined
         );
-        setCurrentStep(data.step || currentStep); // Use existing if undefined
-        setPlanStatus(
-          data.status === "accepted" || data.status === "generating"
-            ? "generating"
-            : data.status,
-        );
-        if (data.message) setCurrentStep(data.message);
+        setCurrentStep(progressData.step || currentStep); // Update step
+
+        // More robust status update:
+        if (progressData.status) {
+          // Only update status if it's explicitly provided in the event
+          setPlanStatus(
+            progressData.status === "accepted" ||
+              progressData.status === "generating"
+              ? "generating"
+              : (progressData.status as
+                  | "idle"
+                  | "creating"
+                  | "generating"
+                  | "complete"
+                  | "error"),
+          );
+        } else if (planStatus === "creating" || planStatus === "generating") {
+          // If no status in event, but we were already creating/generating, stay in "generating"
+          setPlanStatus("generating");
+        }
+        // If data.status is undefined AND current planStatus is idle/complete/error, don't change it.
+
+        if (progressData.message) setCurrentStep(progressData.message); // Update message if present
       }
     };
 
-    const handleComplete = (data: any) => {
-      if (data.planId === planId) {
-        console.log("[TrainingPlanModal] Workout Plan Complete Received:", data);
+    const handleComplete = (data: unknown) => {
+      // Type check the incoming data
+      if (typeof data !== "object" || data === null) {
+        console.error("Invalid data received for workoutPlanComplete");
+        return;
+      }
+      const completeData = data as {
+        planId?: string;
+        result?: WorkoutPlan;
+        message?: string;
+      }; // Type assertion
+
+      if (completeData.planId === planId) {
         setPlanProgress(100);
         setPlanStatus("complete");
-        setPlanResult(data.result as WorkoutPlan);
-        setCurrentStep(data.message || "Plan generation completed!");
+        setPlanResult(completeData.result || null); // Handle potentially missing result
+        setCurrentStep(completeData.message || "Plan generation completed!");
       }
     };
 
-    const handleError = (data: any) => {
-      if (data.planId === planId) {
-        console.error("[TrainingPlanModal] Workout Plan Error Received:", data);
+    const handleError = (data: unknown) => {
+      // Type check the incoming data
+      if (typeof data !== "object" || data === null) {
+        console.error("Invalid data received for workoutPlanError");
+        return;
+      }
+      const errorData = data as {
+        planId?: string;
+        error?: string;
+        message?: string;
+        step?: string;
+      }; // Type assertion
+
+      if (errorData.planId === planId) {
+        console.error(
+          "[TrainingPlanModal] Workout Plan Error Received:",
+          errorData,
+        );
         setPlanStatus("error");
-        setPlanError(data.error || "An unknown error occurred.");
-        setCurrentStep(data.message || data.step || "Generation failed.");
+        setPlanError(errorData.error || "An unknown error occurred.");
+        setCurrentStep(
+          errorData.message || errorData.step || "Generation failed.",
+        );
       }
     };
 
@@ -147,11 +204,9 @@ const TrainingPlanModal: React.FC<TrainingPlanModalProps> = ({
     socket.on("workoutPlanProgress", handleProgress);
     socket.on("workoutPlanComplete", handleComplete);
     socket.on("workoutPlanError", handleError);
-    console.log(`[TrainingPlanModal] Listeners registered for workoutPlan:${planId}`);
 
     // --- Cleanup Function ---
     return () => {
-      console.log(`[TrainingPlanModal] Cleaning up listeners and leaving room: workoutPlan:${planId}`);
       socket.off("workoutPlanProgress", handleProgress);
       socket.off("workoutPlanComplete", handleComplete);
       socket.off("workoutPlanError", handleError);
@@ -159,10 +214,10 @@ const TrainingPlanModal: React.FC<TrainingPlanModalProps> = ({
       // This check is important because if planId becomes null (e.g. modal reset)
       // before isOpen becomes false, we don't want to emit leave with a null planId.
       if (planId) {
-          socket.emit("leaveWorkoutPlanRoom", planId);
+        socket.emit("leaveWorkoutPlanRoom", planId);
       }
     };
-  }, [planId, isOpen]); // Key change: Dependencies are now planId and isOpen
+  }, [planId, isOpen, currentStep, planProgress, planStatus]);
 
   const createWorkoutPlan = async () => {
     try {
@@ -203,14 +258,30 @@ const TrainingPlanModal: React.FC<TrainingPlanModalProps> = ({
       } else {
         throw new Error("Invalid response from server: missing planId.");
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Error creating workout plan:", error);
       setPlanStatus("error");
-      setPlanError(
-        error.response?.data?.message ||
-          error.message ||
-          "Failed to create workout plan",
-      );
+      let errorMessage = "An unknown error occurred.";
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      } else if (
+        typeof error === "object" &&
+        error !== null &&
+        "response" in error &&
+        typeof error.response === "object" &&
+        error.response !== null &&
+        "data" in error.response &&
+        typeof error.response.data === "object" &&
+        error.response.data !== null &&
+        "message" in error.response.data &&
+        typeof error.response.data.message === "string"
+      ) {
+        errorMessage = error.response.data.message;
+      } else if (typeof error === "string") {
+        errorMessage = error;
+      }
+
+      setPlanError(errorMessage || "Failed to create workout plan");
       setCurrentStep("Failed to initiate plan creation.");
     }
   };
@@ -466,9 +537,16 @@ const ProcessingModal: React.FC = () => {
         // Optionally, still close the current modal or show a message
         // setIsModalOpen(false); // Example: close the current modal anyway
       }
-    } else if (processingStatus === "complete" && processingResults && !Array.isArray(processingResults.results)) {
+    } else if (
+      processingStatus === "complete" &&
+      processingResults &&
+      !Array.isArray(processingResults.results)
+    ) {
       // Log if processingResults is set but results is not an array
-      console.warn("Processing complete, but processingResults.results is not an array:", processingResults.results);
+      console.warn(
+        "Processing complete, but processingResults.results is not an array:",
+        processingResults.results,
+      );
       // setIsModalOpen(false); // Example: close the current modal
     }
   }, [
@@ -635,7 +713,8 @@ const ProcessingModal: React.FC = () => {
                   but this provides an alternative place if needed or for more direct display */}
               {currentChunk !== null &&
                 totalChunks !== null &&
-                (!statusMessage || !statusMessage.toLowerCase().includes("chunk")) && (
+                (!statusMessage ||
+                  !statusMessage.toLowerCase().includes("chunk")) && (
                   <div className="flex items-center mt-1 text-xs text-muted-foreground">
                     <Layers className="h-3 w-3 mr-1" />
                     <span>

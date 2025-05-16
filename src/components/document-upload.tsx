@@ -20,11 +20,10 @@ import { cn } from "@/lib/utils";
 import { useToast } from "@/components/ui/use-toast";
 
 // Import the custom hooks and providers
-import { useUpload, UploadProvider } from "@/contexts/UploadContext";
-import {
-  useFileProcessing,
-  FileProcessingProvider,
-} from "@/contexts/FileProcessingContext";
+import { UploadProvider } from "@/contexts/UploadContext";
+import { useUpload } from "@/hooks/useUpload";
+import { useFileProcessing } from "@/hooks/useFileProcessing";
+import { FileProcessingProvider } from "@/contexts/FileProcessingContext";
 import ProcessingModal from "@/components/processing-modal";
 
 // Define UploadFile interface
@@ -57,9 +56,7 @@ const DocumentUploadWithProvider: React.FC<DocumentUploadProps> = ({
 };
 
 // The main component content, consuming the context
-const DocumentUploadContent: React.FC<DocumentUploadProps> = ({
-  onGeneratePlans,
-}) => {
+const DocumentUploadContent: React.FC<DocumentUploadProps> = () => {
   // Use the custom hook to access context state and actions
   const { toast } = useToast();
   const {
@@ -166,8 +163,10 @@ const DocumentUploadContent: React.FC<DocumentUploadProps> = ({
 
     // Extract server fileIds from completedFiles
     const fileIds = completedFiles
-      .map((file) => file.fileId)
-      .filter((fileId): fileId is string => !!fileId);
+      .filter(
+        (file): file is UploadFile & { fileId: string } => file.fileId != null,
+      ) // Filter out files without a valid fileId
+      .map((file) => file.fileId); // Now map only the fileId, which is guaranteed to be string here
 
     console.log("Files to process:", {
       totalFiles: completedFiles.length,
@@ -187,7 +186,17 @@ const DocumentUploadContent: React.FC<DocumentUploadProps> = ({
     }
 
     // Make sure we're calling startProcessing with all file IDs
-    await startProcessing(uploadId, fileIds);
+    if (uploadId) {
+      await startProcessing(uploadId, fileIds);
+    } else {
+      console.error("Upload ID is missing.");
+      toast({
+        title: "Processing Error",
+        description:
+          "Upload ID not available. Please try uploading the files again.",
+        variant: "destructive",
+      });
+    }
   };
 
   return (

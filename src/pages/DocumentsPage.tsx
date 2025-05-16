@@ -1,7 +1,6 @@
 import React from "react";
 import DocumentUpload from "@/components/document-upload";
 import { useToast } from "@/components/ui/use-toast";
-import { socketService } from "@/lib/socket";
 
 const DocumentsPage: React.FC = () => {
   const { toast } = useToast();
@@ -12,10 +11,6 @@ const DocumentsPage: React.FC = () => {
       description: "This feature is not implemented yet.",
     });
   };
-
-  React.useEffect(() => {
-    socketService.enableDebugMode();
-  }, []);
 
   return (
     <div className="min-h-screen">
