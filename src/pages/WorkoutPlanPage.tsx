@@ -1,5 +1,5 @@
-import React from "react";
-import { useLocation } from "react-router-dom";
+import React, { useEffect, useState } from "react";
+import { useParams } from "react-router-dom";
 import {
   Card,
   CardContent,
@@ -8,195 +8,96 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Loader2 } from "lucide-react";
 
-// Define the structure of the WorkoutPlan based on backend types
-// This should ideally come from a shared types definition or be accurately manually defined
-interface Exercise {
-  exercise_name: string;
-  exercise_type: string;
-  description: string;
-  target_muscles: string[];
-  video_url?: string | null;
-  // Add other properties like progressions if they exist in your backend type
-}
-
-interface ExerciseInRoutine {
-  exercise_name: string;
-  progression_level?: string | null;
-  sets?: number | string | null;
-  reps?: number | string | null;
-  duration?: string | number | null;
-  rest_after_exercise?: string | number | null;
-  notes?: string | null;
-}
-
-interface Routine {
-  routine_name: string;
-  routine_type: string;
-  duration?: string | null;
-  notes?: string | null;
-  exercises_in_routine: ExerciseInRoutine[];
-}
-
-interface WorkoutDay {
-  day: string;
-  focus: string;
-  routines: Routine[];
-}
-
-interface WorkoutPlanStructure {
-  structure_type: string;
-  schedule: WorkoutDay[];
-}
-
-interface NutritionAdvice {
-  overview: string;
-  // Add other nutrition properties if they exist
-}
-
-interface HydrationAdvice {
-  overview: string;
-  // Add other hydration properties if they exist
-}
-
-export interface WorkoutPlan {
-  // Renamed from WorkoutPlanData to match backend more closely
-  program_name: string;
-  program_goal: string;
-  program_description: string;
-  required_gear: string[];
-  exercises: Exercise[];
-  workout_plan: WorkoutPlanStructure;
-  nutrition_advice?: NutritionAdvice | null;
-  hydration_advice?: HydrationAdvice | null;
-}
-
-// Sample data (can be kept for fallback or development)
-const sampleWorkoutPlan: WorkoutPlan = {
-  program_name: "Sample Basic Calisthenics",
-  program_goal: "Build fundamental strength",
-  program_description: "A sample bodyweight program.",
-  required_gear: ["None"],
-  exercises: [
-    {
-      exercise_name: "Push-up",
-      exercise_type: "Basics",
-      description: "Standard push-up.",
-      target_muscles: ["Chest", "Shoulders", "Triceps"],
-    },
-    {
-      exercise_name: "Squat",
-      exercise_type: "Basics",
-      description: "Bodyweight squat.",
-      target_muscles: ["Quads", "Glutes"],
-    },
-  ],
-  workout_plan: {
-    structure_type: "Weekly Split",
-    schedule: [
-      {
-        day: "Day 1",
-        focus: "Full Body",
-        routines: [
-          {
-            routine_name: "Circuit A",
-            routine_type: "Circuit",
-            exercises_in_routine: [
-              {
-                exercise_name: "Push-up",
-                sets: 3,
-                reps: 10,
-                rest_after_exercise: "60s",
-              },
-              {
-                exercise_name: "Squat",
-                sets: 3,
-                reps: 15,
-                rest_after_exercise: "60s",
-              },
-            ],
-          },
-        ],
-      },
-      { day: "Day 2", focus: "Rest", routines: [] },
-      {
-        day: "Day 3",
-        focus: "Full Body",
-        routines: [
-          {
-            routine_name: "Circuit B",
-            routine_type: "Circuit",
-            exercises_in_routine: [
-              {
-                exercise_name: "Push-up",
-                sets: 3,
-                reps: 12,
-                rest_after_exercise: "60s",
-              },
-              {
-                exercise_name: "Squat",
-                sets: 3,
-                reps: 20,
-                rest_after_exercise: "60s",
-              },
-            ],
-          },
-        ],
-      },
-      { day: "Day 4", focus: "Rest", routines: [] },
-      {
-        day: "Day 5",
-        focus: "Full Body",
-        routines: [
-          {
-            routine_name: "Circuit C",
-            routine_type: "Circuit",
-            exercises_in_routine: [
-              {
-                exercise_name: "Push-up",
-                sets: 3,
-                reps: 15,
-                rest_after_exercise: "60s",
-              },
-              {
-                exercise_name: "Squat",
-                sets: 3,
-                reps: 25,
-                rest_after_exercise: "60s",
-              },
-            ],
-          },
-        ],
-      },
-    ],
-  },
-};
+import type { WorkoutPlan } from "@/types";
 
 export const WorkoutPlanPage: React.FC = () => {
-  const location = useLocation();
-  // Attempt to get workoutPlan from navigation state, default to sample if not found
-  const workoutData =
-    (location.state as { workoutPlan?: WorkoutPlan })?.workoutPlan ||
-    sampleWorkoutPlan;
+  const { planId } = useParams<{ planId: string }>();
 
-  if (!workoutData) {
+  const [workoutPlan, setWorkoutPlan] = useState<WorkoutPlan | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchWorkoutPlan = async () => {
+      if (!planId) {
+        setError("No workout plan ID provided.");
+        setIsLoading(false);
+        return;
+      }
+
+      setIsLoading(true);
+      setError(null);
+      setWorkoutPlan(null); // Clear previous data
+
+      try {
+        // Fetch all workout plans and find the one matching the ID
+        // A more efficient API would be GET /api/workout-plans/{planId}
+        const response = await fetch("http://localhost:3000/api/workout-plans");
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        const data: WorkoutPlan[] = await response.json();
+
+        const foundPlan = data.find((plan) => plan.id === planId);
+
+        if (foundPlan) {
+          setWorkoutPlan(foundPlan);
+        } else {
+          setError("Workout plan not found.");
+        }
+      } catch (e) {
+        console.error("Failed to fetch workout plan:", e);
+        setError(
+          `Failed to load workout plan: ${e instanceof Error ? e.message : String(e)}`,
+        );
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchWorkoutPlan();
+  }, [planId]); // Re-run effect if planId changes
+
+  // Conditional rendering based on state
+  if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <p>No workout plan data found. Please generate a plan first.</p>
+        <Loader2 className="h-8 w-8 animate-spin" />
+        <p className="ml-2">Loading workout plan...</p>
       </div>
     );
   }
 
+  if (error) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <p className="text-red-500">{error}</p>
+      </div>
+    );
+  }
+
+  if (!workoutPlan) {
+    // Check if workoutPlan is null after loading
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <p>Workout plan not found.</p>
+      </div>
+    );
+  }
+
+  // Destructure from fetched workoutPlan
   const {
     program_name,
     program_goal,
     program_description,
     required_gear,
     exercises,
-    workout_plan,
-    nutrition_advice, // Added
-    hydration_advice, // Added
-  } = workoutData;
+    workout_plan: schedule_data, // Renamed to avoid conflict with state variable
+    nutrition_advice,
+    hydration_advice,
+  } = workoutPlan;
 
   return (
     <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
@@ -295,21 +196,21 @@ export const WorkoutPlanPage: React.FC = () => {
         )}
 
         {/* Workout Schedule Section */}
-        {workout_plan &&
-          workout_plan.schedule &&
-          workout_plan.schedule.length > 0 && (
+        {schedule_data &&
+          schedule_data.schedule &&
+          schedule_data.schedule.length > 0 && (
             <Card>
               <CardHeader>
                 <CardTitle>Workout Schedule</CardTitle>
-                {workout_plan.structure_type && (
+                {schedule_data.structure_type && (
                   <CardDescription>
-                    Structure: {workout_plan.structure_type}
+                    Structure: {schedule_data.structure_type}
                   </CardDescription>
                 )}
               </CardHeader>
               <CardContent>
                 <div className="space-y-6">
-                  {workout_plan.schedule.map((day, dayIndex) => (
+                  {schedule_data.schedule.map((day, dayIndex) => (
                     <Card key={dayIndex}>
                       <CardHeader className="bg-gray-50 dark:bg-gray-800">
                         <div className="flex justify-between items-center">

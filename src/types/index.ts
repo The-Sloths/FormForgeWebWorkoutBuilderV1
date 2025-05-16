@@ -5,14 +5,14 @@ export interface FormRule {
     max_angle: number;
     feedback: string;
   }
-  
+
   export interface Landmark {
     x: number;
     y: number;
     z: number;
     visibility?: number;
   }
-  
+
   export interface Workout {
     id?: string;
     name: string;
@@ -23,8 +23,23 @@ export interface FormRule {
     form_rules: FormRule[];
     created_at?: string;
   }
-  
+
   export interface PoseLandmarkerResult {
     landmarks?: Landmark[][];
     worldLandmarks?: Landmark[][];
   }
+
+export type {
+  Exercise,
+  ExerciseInRoutine,
+  Routine,
+  WorkoutDay,
+  WorkoutPlanSchedule,
+  KeyPrinciple,
+  MacronutrientsGuidelines,
+  Meal,
+  ExampleMealPlan,
+  NutritionAdvice,
+  HydrationAdvice,
+  WorkoutPlan
+} from "./workouts";

@@ -1,6 +1,11 @@
 import { Button } from "@/components/ui/button";
 import { Toaster } from "@/components/ui/toaster";
-import type { FormRule, Landmark, Workout, PoseLandmarkerResult } from "@/types";
+import type {
+  FormRule,
+  Landmark,
+  Workout,
+  PoseLandmarkerResult,
+} from "@/types";
 import { Plus } from "lucide-react";
 import { useState } from "react";
 import { BrowserRouter, Link, Route, Routes } from "react-router-dom";
@@ -15,6 +20,7 @@ import { useToast } from "./components/ui/use-toast";
 import { saveWorkout } from "./lib/supabase";
 import DocumentsPage from "./pages/DocumentsPage";
 import WorkoutPlanPage from "./pages/WorkoutPlanPage";
+import WorkoutPlansPage from "./pages/WorkoutPlansPage";
 
 function WorkoutBuilder() {
   const { toast } = useToast();
@@ -306,7 +312,7 @@ export default function App() {
               Gradatrim
             </Link>
             <div className="space-x-4">
-              <Link to="/" className="hover:underline">
+              <Link to="/workouts" className="hover:underline">
                 Workouts
               </Link>
               <Link to="/documents" className="hover:underline">
@@ -319,7 +325,8 @@ export default function App() {
         <Routes>
           <Route path="/" element={<WorkoutBuilder />} />
           <Route path="/documents" element={<DocumentsPage />} />
-          <Route path="/workout-plan" element={<WorkoutPlanPage />} />
+          <Route path="/workouts" element={<WorkoutPlansPage />} />
+          <Route path="/workout-plan/:planId" element={<WorkoutPlanPage />} />
         </Routes>
 
         <Toaster />

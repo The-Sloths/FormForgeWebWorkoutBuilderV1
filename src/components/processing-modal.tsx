@@ -301,11 +301,11 @@ const TrainingPlanModal: React.FC<TrainingPlanModalProps> = ({
 
   const handleShowPlans = () => {
     if (planResult) {
-      console.log("Navigating to plans page with plan:", planResult);
-      navigate("/workout-plan", { state: { workoutPlan: planResult } });
+      console.log("Navigating to workout plan page with ID:", planId);
+      navigate(`/workout-plan/${planId}`); // Navigate with planId as URL parameter
       setIsOpen(false); // Close modal after navigation
     } else {
-      console.error("Cannot navigate: planResult is null.");
+      console.error("Cannot navigate: planId or planResult is null/undefined.");
       // Optionally show a toast or message
     }
   };
