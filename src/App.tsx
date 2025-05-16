@@ -5,7 +5,6 @@ import { Plus } from "lucide-react";
 import { useState } from "react";
 import { BrowserRouter, Link, Route, Routes } from "react-router-dom";
 
-import "./App.css";
 import { FormRuleComponent } from "./components/form-rule";
 import { LandmarkCanvas } from "./components/landmark-canvas";
 import { PoseUpload } from "./components/pose-upload";

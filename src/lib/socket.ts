@@ -1,7 +1,8 @@
 import { io, Socket } from "socket.io-client";
 import { v4 as uuidv4 } from "uuid";
 
-const SOCKET_URL = "http://localhost:3000";
+// Ensure VITE_API_URL is used, with a fallback for development if not set
+const SOCKET_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
 
 // Types based on the AsyncAPI specification
 export interface UploadProgressData {
@@ -247,20 +248,24 @@ class SocketService {
 
     // Don't join if already in this room
     if (this.activeRooms.has(uploadId)) {
-      console.log(`Already in upload room: ${uploadId}`);
+      console.log(`[SocketService DEBUG] joinUploadRoom: Already in activeRooms for ${uploadId}. Current activeRooms:`, new Set(this.activeRooms));
+      // Even if already in activeRooms, ensure server knows, in case of client/server desync
+      // socket.emit("joinUploadRoom", uploadId); // Re-emitting might cause issues if server doesn't handle it well
       return;
     }
 
+    console.log(`[SocketService DEBUG] joinUploadRoom: Attempting to join room for ${uploadId}. isConnected: ${this.isConnected}. Current activeRooms:`, new Set(this.activeRooms));
     // Add to active rooms - store without prefix
     this.activeRooms.add(uploadId);
+    console.log(`[SocketService DEBUG] joinUploadRoom: Added ${uploadId} to activeRooms. New activeRooms:`, new Set(this.activeRooms));
 
     // Emit join event - server will add prefix
     socket.emit("joinUploadRoom", uploadId);
-    console.log(`Joined upload room: ${uploadId}`);
+    console.log(`[SocketService] Client ${socket.id} emitted joinUploadRoom for: ${uploadId}`);
 
     // Debug listener to confirm room joining
     socket.once("ACK:joinUploadRoom", (data) => {
-      console.log("Successfully joined room:", data);
+      console.log(`[SocketService] ACK:joinUploadRoom received for ${uploadId}:`, data);
     });
   }
 
@@ -268,22 +273,24 @@ class SocketService {
     const socket = this.getSocket();
 
     if (!this.isConnected) {
-      console.warn(`Cannot leave room for ${uploadId}, socket not connected`);
+      console.warn(`[SocketService DEBUG] leaveUploadRoom: Cannot leave room for ${uploadId}, socket not connected.`);
       return;
     }
 
+    console.log(`[SocketService DEBUG] leaveUploadRoom: Attempting to leave room for ${uploadId}. isConnected: ${this.isConnected}. Current activeRooms:`, new Set(this.activeRooms));
     // Don't leave if not in this room
     if (!this.activeRooms.has(uploadId)) {
-      console.log(`Not in upload room: ${uploadId}, no need to leave`);
+      console.log(`[SocketService DEBUG] leaveUploadRoom: Not in activeRooms for ${uploadId}, no need to leave. Current activeRooms:`, new Set(this.activeRooms));
       return;
     }
 
     // Remove from active rooms
     this.activeRooms.delete(uploadId);
+    console.log(`[SocketService DEBUG] leaveUploadRoom: Removed ${uploadId} from activeRooms. New activeRooms:`, new Set(this.activeRooms));
 
     // Emit leave event - server will handle the prefix
     socket.emit("leaveUploadRoom", uploadId);
-    console.log(`Left upload room: ${uploadId}`);
+    console.log(`[SocketService] Client ${socket.id} emitted leaveUploadRoom for: ${uploadId}`);
   }
 
   onUploadProgress(callback: (data: UploadProgressData) => void): void {

@@ -90,6 +90,9 @@ const FileProcessingContext = createContext<
   FileProcessingContextType | undefined
 >(undefined);
 
+// Define the base URL for API calls, respecting VITE_API_URL
+const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
+
 interface FileProcessingProviderProps {
   children: ReactNode;
 }
@@ -170,16 +173,17 @@ export const FileProcessingProvider: React.FC<FileProcessingProviderProps> = ({
 
     handleProcessingProgress: (data: ProcessingProgressData) => {
       console.log(
-        `Processing progress event received for uploadId: ${data.uploadId}`,
+        `[CONTEXT_DEBUG] handleProcessingProgress: Received raw event data for uploadId: ${data.uploadId}`, data
       );
 
       // IMPORTANT FIX: Be more lenient in accepting events
       // Accept the event if it matches our uploadId OR if we don't have an uploadId yet
       if (data.uploadId === uploadId || (data.uploadId && !uploadId)) {
-        console.log("Updating processing progress state", data);
+        console.log("[CONTEXT_DEBUG] handleProcessingProgress: Event matches context uploadId. Updating state.", { currentContextUploadId: uploadId, eventData: data });
 
         // If our uploadId isn't set yet, set it now
         if (!uploadId && data.uploadId) {
+          console.log(`[CONTEXT_DEBUG] handleProcessingProgress: Setting context uploadId to: ${data.uploadId}`);
           setUploadId(data.uploadId);
         }
 
@@ -227,26 +231,29 @@ export const FileProcessingProvider: React.FC<FileProcessingProviderProps> = ({
         }
         if (data.message) {
           setStatusMessage(data.message);
+          console.log(`[CONTEXT_DEBUG] handleProcessingProgress: StatusMessage updated to: "${data.message}"`);
         }
+        console.log(`[CONTEXT_DEBUG] handleProcessingProgress: Final processingProgress state after update: ${progress}%`);
       } else {
         console.log(
-          `UploadId mismatch in processingProgress: event=${data.uploadId}, state=${uploadId}`,
+          `[CONTEXT_DEBUG] handleProcessingProgress: UploadId mismatch. Event: ${data.uploadId}, Context: ${uploadId}. Ignoring event.`
         );
       }
     },
 
     handleProcessingComplete: (data: ProcessingCompleteData) => {
       console.log(
-        `Processing complete event received for uploadId: ${data.uploadId}`,
+        `[CONTEXT_DEBUG] handleProcessingComplete: Received raw event data for uploadId: ${data.uploadId}`, data
       );
 
       // IMPORTANT FIX: Be more lenient in accepting events
       // Accept the event if it matches our uploadId OR if we don't have an uploadId yet
       if (data.uploadId === uploadId || (data.uploadId && !uploadId)) {
-        console.log("Processing complete event matches our uploadId", data);
+        console.log("[CONTEXT_DEBUG] handleProcessingComplete: Event matches context uploadId. Updating state.", { currentContextUploadId: uploadId, eventData: data });
 
         // If our uploadId isn't set yet, set it now
         if (!uploadId && data.uploadId) {
+          console.log(`[CONTEXT_DEBUG] handleProcessingComplete: Setting context uploadId to: ${data.uploadId}`);
           setUploadId(data.uploadId);
         }
 
@@ -255,13 +262,17 @@ export const FileProcessingProvider: React.FC<FileProcessingProviderProps> = ({
         setProcessingProgress(100);
         setProcessedFiles(data.processedFiles);
         setTotalFiles(data.totalFiles);
+        console.log("[CONTEXT_DEBUG] handleProcessingComplete: Status set to 'complete', progress to 100.");
 
         // Store the results
-        setProcessingResults({
+        const newProcessingResults = {
           totalChunks: data.totalChunks,
           totalCharacters: data.totalCharacters,
-          results: data.results,
-        });
+          results: data.results, // Critical: check structure of data.results
+        };
+        setProcessingResults(newProcessingResults);
+        console.log("[CONTEXT_DEBUG] handleProcessingComplete: processingResults set. Raw data.results:", data.results, "New state:", newProcessingResults);
+
 
         // Set additional information if available
         if (data.status) {
@@ -278,14 +289,14 @@ export const FileProcessingProvider: React.FC<FileProcessingProviderProps> = ({
         });
       } else {
         console.log(
-          `UploadId mismatch in processingComplete: event=${data.uploadId}, state=${uploadId}`,
+          `[CONTEXT_DEBUG] handleProcessingComplete: UploadId mismatch. Event: ${data.uploadId}, Context: ${uploadId}. Ignoring event.`
         );
       }
     },
 
     handleProcessingError: (data: ProcessingErrorData) => {
       console.log(
-        `Processing error event received for uploadId: ${data.uploadId}`,
+        `[CONTEXT_DEBUG] handleProcessingError: Received raw event data for uploadId: ${data.uploadId}`, data
       );
 
       // IMPORTANT FIX: Be more lenient in accepting events
@@ -318,7 +329,7 @@ export const FileProcessingProvider: React.FC<FileProcessingProviderProps> = ({
         });
       } else {
         console.log(
-          `UploadId mismatch in processingError: event=${data.uploadId}, state=${uploadId}`,
+          `[CONTEXT_DEBUG] handleProcessingError: UploadId mismatch. Event: ${data.uploadId}, Context: ${uploadId}. Ignoring event.`
         );
       }
     },
@@ -424,7 +435,7 @@ export const FileProcessingProvider: React.FC<FileProcessingProviderProps> = ({
             fileId: string;
             filename: string;
           }>;
-        }>("http://localhost:3000/api/files/process", {
+        }>(`${API_BASE_URL}/api/files/process`, {
           uploadId: clientUploadId,
           fileIds: fileIds,
         });

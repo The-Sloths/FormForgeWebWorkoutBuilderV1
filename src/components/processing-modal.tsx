@@ -21,11 +21,52 @@ import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
 import { useFileProcessing } from "@/contexts/FileProcessingContext";
 import axios from "axios";
-import { io } from "socket.io-client";
+import { io, Socket } from "socket.io-client"; // Import Socket type
 import { useNavigate } from "react-router-dom";
+// Assuming WorkoutPlan type is exported from your types or a shared location
+// If not, you might need to define a similar type here or import it
+// For example, if your backend types are in a shared package or duplicated:
+// import type { WorkoutPlan } from "../../../../FormForgeRAGServer/src/types/workoutPlanTypes";
 
-// Create socket instance
-const socket = io(import.meta.env.VITE_API_URL || "http://localhost:3000");
+// Define a simple WorkoutPlan type here if not importing from backend
+interface WorkoutPlan {
+  program_name: string;
+  program_goal: string;
+  program_description: string;
+  required_gear: string[];
+  exercises: Array<{
+    exercise_name: string;
+    exercise_type: string;
+    description: string;
+    target_muscles: string[];
+    video_url?: string | null;
+    // Add other exercise properties as needed
+  }>;
+  workout_plan: {
+    structure_type: string;
+    schedule: Array<{
+      day: string;
+      focus: string;
+      routines: Array<{
+        routine_name: string;
+        routine_type: string;
+        exercises_in_routine: Array<{
+          exercise_name: string;
+          sets?: number | string | null;
+          reps?: number | string | null;
+          duration?: string | number | null;
+          rest_after_exercise?: string | number | null;
+          // Add other exercise_in_routine properties
+        }>;
+      }>;
+    }>;
+  };
+  // Add nutrition_advice, hydration_advice if needed
+}
+
+// Create socket instance - ensure this uses VITE_API_URL
+const socketUrl = import.meta.env.VITE_API_URL || "http://localhost:3000";
+const socket: Socket = io(socketUrl);
 
 // Training Plan Modal Component
 interface TrainingPlanModalProps {
@@ -39,118 +80,165 @@ const TrainingPlanModal: React.FC<TrainingPlanModalProps> = ({
   setIsOpen,
   fileIds,
 }) => {
-  const navigate = useNavigate(); // Moved inside the component
+  const navigate = useNavigate();
   const [planId, setPlanId] = useState<string | null>(null);
   const [planStatus, setPlanStatus] = useState<
     "idle" | "creating" | "generating" | "complete" | "error"
   >("idle");
   const [planProgress, setPlanProgress] = useState<number>(0);
   const [planError, setPlanError] = useState<string | null>(null);
-  const [planResult, setPlanResult] = useState<any | null>(null);
+  const [planResult, setPlanResult] = useState<WorkoutPlan | null>(null); // Use WorkoutPlan type
   const [currentStep, setCurrentStep] = useState<string | null>(null);
 
-  // Create the workout plan when the modal opens
+  // Set up socket listeners when planId is available and modal is open
   useEffect(() => {
-    if (isOpen && fileIds.length > 0 && planStatus === "idle") {
-      createWorkoutPlan();
+    // Only run if the modal is open and we have a planId
+    if (!isOpen || !planId) {
+      // If the modal is closing or there's no planId, the cleanup function (return)
+      // from a previous run (when isOpen was true and planId was set) should handle leaving the room.
+      // No need to emit leave here directly as it might lead to duplicate leave calls
+      // if the cleanup function also runs.
+      return;
     }
-  }, [isOpen, fileIds]);
 
-  // Set up socket listeners when planId is available
-  useEffect(() => {
-    if (!planId) return;
-
-    // Join the workout plan room
+    // --- Join Room ---
+    console.log(`[TrainingPlanModal] Attempting to join workout plan room: workoutPlan:${planId}`);
     socket.emit("joinWorkoutPlanRoom", planId);
 
-    // Listen for workout plan progress events
+    // --- Define Handlers ---
+    // These handlers will use the state values (planProgress, currentStep) as they are
+    // at the time the event occurs, due to closure.
     const handleProgress = (data: any) => {
-      if (data.planId === planId) {
-        setPlanProgress(data.progress);
-        setCurrentStep(data.step);
-        setPlanStatus("generating");
+      if (data.planId === planId) { // Ensure event is for our current plan
+        console.log("[TrainingPlanModal] Workout Plan Progress Received:", data);
+        setPlanProgress(
+          data.progress !== undefined ? data.progress : planProgress, // Use existing if undefined
+        );
+        setCurrentStep(data.step || currentStep); // Use existing if undefined
+        setPlanStatus(
+          data.status === "accepted" || data.status === "generating"
+            ? "generating"
+            : data.status,
+        );
+        if (data.message) setCurrentStep(data.message);
       }
     };
 
-    // Listen for workout plan completion
     const handleComplete = (data: any) => {
       if (data.planId === planId) {
+        console.log("[TrainingPlanModal] Workout Plan Complete Received:", data);
         setPlanProgress(100);
         setPlanStatus("complete");
-        setPlanResult(data.result);
-        console.log("Workout plan creation complete:", data);
+        setPlanResult(data.result as WorkoutPlan);
+        setCurrentStep(data.message || "Plan generation completed!");
       }
     };
 
-    // Listen for workout plan errors
     const handleError = (data: any) => {
       if (data.planId === planId) {
+        console.error("[TrainingPlanModal] Workout Plan Error Received:", data);
         setPlanStatus("error");
-        setPlanError(data.error);
+        setPlanError(data.error || "An unknown error occurred.");
+        setCurrentStep(data.message || data.step || "Generation failed.");
       }
     };
 
-    // Register event listeners
+    // --- Register Listeners ---
     socket.on("workoutPlanProgress", handleProgress);
     socket.on("workoutPlanComplete", handleComplete);
     socket.on("workoutPlanError", handleError);
+    console.log(`[TrainingPlanModal] Listeners registered for workoutPlan:${planId}`);
 
-    // Clean up listeners on unmount
+    // --- Cleanup Function ---
     return () => {
+      console.log(`[TrainingPlanModal] Cleaning up listeners and leaving room: workoutPlan:${planId}`);
       socket.off("workoutPlanProgress", handleProgress);
       socket.off("workoutPlanComplete", handleComplete);
       socket.off("workoutPlanError", handleError);
-      socket.emit("leaveWorkoutPlanRoom", planId);
+      // Only leave room if we had a planId we were listening for.
+      // This check is important because if planId becomes null (e.g. modal reset)
+      // before isOpen becomes false, we don't want to emit leave with a null planId.
+      if (planId) {
+          socket.emit("leaveWorkoutPlanRoom", planId);
+      }
     };
-  }, [planId]);
+  }, [planId, isOpen]); // Key change: Dependencies are now planId and isOpen
 
-  // Function to create a workout plan
   const createWorkoutPlan = async () => {
     try {
       setPlanStatus("creating");
       setPlanProgress(0);
       setPlanError(null);
+      setCurrentStep("Initiating plan creation...");
 
       const payload = {
-        query: "Create a beginner strength training program",
+        query:
+          "Create a comprehensive calisthenics program for strength and muscle gain", // Example query
         fileIds: fileIds,
         options: {
-          fitnessLevel: "beginner",
-          specificGoals: ["strength"],
+          topK: 10,
+          fitnessLevel: "intermediate",
+          specificGoals: ["strength", "hypertrophy", "skill development"],
+          includeNutrition: true,
+          includeHydration: true,
         },
       };
 
+      // Use the VITE_API_URL for the POST request
       const response = await axios.post(
-        "http://localhost:3000/api/workout-plans",
+        `${socketUrl}/api/workout-plans`, // Use socketUrl which respects VITE_API_URL
         payload,
       );
       console.log("Workout plan creation initiated:", response.data);
 
-      // Set the plan ID from the response
-      setPlanId(response.data.planId);
+      if (response.data && response.data.planId) {
+        setPlanId(response.data.planId);
+        // The 'accepted' status comes from the HTTP response
+        if (response.data.status === "accepted") {
+          setPlanStatus("generating"); // Transition to generating as backend starts work
+          setCurrentStep(
+            response.data.message || "Request accepted by server.",
+          );
+        }
+      } else {
+        throw new Error("Invalid response from server: missing planId.");
+      }
     } catch (error: any) {
       console.error("Error creating workout plan:", error);
       setPlanStatus("error");
       setPlanError(
-        error.response?.data?.message || "Failed to create workout plan",
+        error.response?.data?.message ||
+          error.message ||
+          "Failed to create workout plan",
       );
+      setCurrentStep("Failed to initiate plan creation.");
     }
   };
 
-  // Handle closing the modal
   const handleClose = () => {
     setIsOpen(false);
+    // Optionally reset state if modal is closed before completion
+    if (planStatus !== "complete") {
+      setPlanStatus("idle");
+      setPlanId(null);
+      setPlanProgress(0);
+      setPlanError(null);
+      setPlanResult(null);
+      setCurrentStep(null);
+    }
   };
 
-  // Handle showing plans
   const handleShowPlans = () => {
-    // Here you would navigate to the plans page
-    setIsOpen(false);
-    console.log("Navigate to plans page, showing plan:", planResult);
-    navigate("/workout-plan"); // Replace alert with navigation
+    if (planResult) {
+      console.log("Navigating to plans page with plan:", planResult);
+      navigate("/workout-plan", { state: { workoutPlan: planResult } });
+      setIsOpen(false); // Close modal after navigation
+    } else {
+      console.error("Cannot navigate: planResult is null.");
+      // Optionally show a toast or message
+    }
   };
 
-  // Get status icon based on current state
   const getStatusIcon = () => {
     switch (planStatus) {
       case "complete":
@@ -162,42 +250,41 @@ const TrainingPlanModal: React.FC<TrainingPlanModalProps> = ({
         return (
           <RefreshCw className="h-10 w-10 text-blue-500 animate-spin mb-4" />
         );
-      default:
-        return <DumbbellIcon className="h-10 w-10 text-blue-500 mb-4" />;
+      default: // idle
+        return <DumbbellIcon className="h-10 w-10 text-gray-400 mb-4" />;
     }
   };
 
-  // Get status title based on current state
   const getStatusTitle = () => {
     switch (planStatus) {
       case "complete":
-        return "Training Plan Created!";
+        return "Training Plan Ready!";
       case "error":
         return "Training Plan Error";
       case "creating":
-        return "Creating Training Plan";
+        return "Requesting Training Plan";
       case "generating":
-        return "Generating Training Plan";
-      default:
-        return "Training Plan Creation";
+        return "Generating Your Plan";
+      default: // idle
+        return "Create Training Plan";
     }
   };
 
-  // Get status description based on current state
   const getStatusDescription = () => {
     switch (planStatus) {
       case "complete":
-        return "Your personalized training plan has been created successfully.";
-      case "error":
         return (
-          planError || "An error occurred while creating your training plan."
+          planResult?.program_name ||
+          "Your personalized training plan has been created."
         );
+      case "error":
+        return planError || "An error occurred.";
       case "creating":
-        return "Initializing training plan creation...";
+        return "Sending request to the server...";
       case "generating":
-        return currentStep || "Generating your personalized training plan...";
-      default:
-        return "Preparing to create your training plan...";
+        return currentStep || "Working on your plan...";
+      default: // idle
+        return "Ready to create a plan from your documents.";
     }
   };
 
@@ -212,37 +299,38 @@ const TrainingPlanModal: React.FC<TrainingPlanModalProps> = ({
           <DialogDescription>{getStatusDescription()}</DialogDescription>
         </DialogHeader>
 
-        {/* Show progress for generating state */}
         {(planStatus === "creating" || planStatus === "generating") && (
           <div className="my-4">
             <div className="flex justify-between items-center mb-2">
               <span className="text-sm font-medium">Progress</span>
               <span className="text-sm text-muted-foreground">
-                {planProgress}%
+                {Math.round(planProgress)}% {/* Ensure progress is rounded */}
               </span>
             </div>
             <Progress value={planProgress} className="h-2" />
           </div>
         )}
 
-        {/* Show result summary when complete */}
         {planStatus === "complete" && planResult && (
-          <div className="my-4 text-sm">
+          <div className="my-4 text-sm max-h-60 overflow-y-auto">
             <div className="flex flex-col space-y-2 text-muted-foreground">
               <div className="flex items-center">
                 <ClipboardList className="h-4 w-4 mr-2" />
-                <p className="font-medium">
+                <p className="font-medium text-card-foreground">
                   {planResult.program_name || "Custom Workout Program"}
                 </p>
               </div>
-              <p>
-                {planResult.program_description ||
-                  "A personalized workout program based on your files."}
+              <p className="text-xs">
+                Goal: {planResult.program_goal || "Not specified."}
+              </p>
+              <p className="text-xs">
+                Description:{" "}
+                {planResult.program_description || "No description."}
               </p>
               {planResult.required_gear &&
                 planResult.required_gear.length > 0 && (
-                  <div>
-                    <p className="font-medium">Required Equipment:</p>
+                  <div className="text-xs">
+                    <p className="font-medium">Required Gear:</p>
                     <ul className="ml-4 mt-1 space-y-1 list-disc">
                       {planResult.required_gear.map(
                         (item: string, index: number) => (
@@ -256,33 +344,43 @@ const TrainingPlanModal: React.FC<TrainingPlanModalProps> = ({
           </div>
         )}
 
-        {/* Debug info */}
         <details className="text-xs text-muted-foreground mt-2 mb-2">
           <summary className="flex items-center cursor-pointer">
             <Info className="h-3 w-3 mr-1" />
             Debug Info
           </summary>
-          <div className="mt-1 pl-4 border-l-2 border-muted">
+          <div className="mt-1 pl-4 border-l-2 border-muted max-h-20 overflow-y-auto">
             <p>Plan ID: {planId || "None"}</p>
-            <p>Status: {planStatus}</p>
-            <p>Progress: {planProgress}%</p>
-            <p>Files: {fileIds.length}</p>
+            <p>Client Status: {planStatus}</p>
+            <p>Server Step: {currentStep || "N/A"}</p>
+            <p>Progress: {Math.round(planProgress)}%</p>
+            <p>Files for plan: {fileIds.length}</p>
+            {planError && <p className="text-red-500">Error: {planError}</p>}
           </div>
         </details>
 
         <DialogFooter className="mt-4">
           {planStatus === "complete" ? (
             <Button onClick={handleShowPlans} className="w-full">
-              Show My Plans
+              View Full Plan
             </Button>
           ) : planStatus === "error" ? (
-            <Button onClick={handleClose} className="w-full">
+            <Button onClick={handleClose} className="w-full" variant="outline">
               Close
             </Button>
-          ) : (
+          ) : planStatus === "creating" || planStatus === "generating" ? (
             <Button disabled className="w-full">
               <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
               Processing...
+            </Button>
+          ) : (
+            // Idle state
+            <Button
+              onClick={createWorkoutPlan}
+              className="w-full"
+              disabled={fileIds.length === 0}
+            >
+              Start Plan Creation
             </Button>
           )}
         </DialogFooter>
@@ -290,6 +388,8 @@ const TrainingPlanModal: React.FC<TrainingPlanModalProps> = ({
     </Dialog>
   );
 };
+// Main Processing Modal (the rest of the component remains the same)
+// ... (rest of ProcessingModal component) ...
 
 // Main Processing Modal
 const ProcessingModal: React.FC = () => {
@@ -317,7 +417,7 @@ const ProcessingModal: React.FC = () => {
 
   // State for training plan modal
   const [isTrainingPlanModalOpen, setIsTrainingPlanModalOpen] = useState(false);
-  const [fileIds, setFileIds] = useState<string[]>([]);
+  const [fileIdsForPlan, setFileIdsForPlan] = useState<string[]>([]); // Renamed to avoid conflict
 
   // Debug - last update timestamp
   const [lastUpdate, setLastUpdate] = useState<string>("");
@@ -343,7 +443,8 @@ const ProcessingModal: React.FC = () => {
   useEffect(() => {
     if (
       processingStatus === "complete" &&
-      processingResults &&
+      processingResults && // Ensure processingResults itself is not null
+      Array.isArray(processingResults.results) && // Ensure .results is an array
       !isTrainingPlanModalOpen
     ) {
       // Extract file IDs from processing results
@@ -352,15 +453,31 @@ const ProcessingModal: React.FC = () => {
       );
 
       if (extractedFileIds.length > 0) {
-        setFileIds(extractedFileIds);
-        // Close the processing modal and open the training plan modal
+        setFileIdsForPlan(extractedFileIds);
         setTimeout(() => {
           setIsModalOpen(false);
           setIsTrainingPlanModalOpen(true);
-        }, 1000); // Small delay for better UX
+        }, 1000);
+      } else {
+        // This case means processingResults.results was an empty array.
+        console.warn(
+          "Processing complete, but no file IDs found in processingResults.results. Training plan modal will not open.",
+        );
+        // Optionally, still close the current modal or show a message
+        // setIsModalOpen(false); // Example: close the current modal anyway
       }
+    } else if (processingStatus === "complete" && processingResults && !Array.isArray(processingResults.results)) {
+      // Log if processingResults is set but results is not an array
+      console.warn("Processing complete, but processingResults.results is not an array:", processingResults.results);
+      // setIsModalOpen(false); // Example: close the current modal
     }
-  }, [processingStatus, processingResults]);
+  }, [
+    processingStatus,
+    processingResults,
+    isModalOpen,
+    setIsModalOpen,
+    isTrainingPlanModalOpen,
+  ]); // Added dependencies
 
   const getStatusIcon = () => {
     switch (processingStatus) {
@@ -380,9 +497,9 @@ const ProcessingModal: React.FC = () => {
   const getStatusTitle = () => {
     switch (processingStatus) {
       case "complete":
-        return "Processing Complete";
+        return "Document Learning Complete";
       case "error":
-        return "Processing Error";
+        return "Document Learning Error";
       case "processing":
         // Use detailed server status if available
         if (serverStatus) {
@@ -413,7 +530,7 @@ const ProcessingModal: React.FC = () => {
 
     switch (processingStatus) {
       case "complete":
-        return `All ${processedFiles} files have been processed successfully.`;
+        return `All ${processedFiles} files have been processed. Ready to create a training plan.`;
       case "error":
         return processingError || "An error occurred during processing.";
       case "processing":
@@ -440,10 +557,12 @@ const ProcessingModal: React.FC = () => {
     return (
       <div className="space-y-3 mt-4">
         {/* File progress if available */}
-        {fileProgress !== null && (
+        {fileProgress !== null && typeof fileProgress === "number" && (
           <div>
             <div className="flex justify-between items-center text-xs mb-1">
-              <span className="font-medium">Current File</span>
+              <span className="font-medium">
+                Current File ({currentFile || "N/A"})
+              </span>
               <span className="text-muted-foreground">{fileProgress}%</span>
             </div>
             <Progress value={fileProgress} className="h-1" />
@@ -451,17 +570,18 @@ const ProcessingModal: React.FC = () => {
         )}
 
         {/* Embedding progress if available */}
-        {embeddingProgress !== null && (
-          <div>
-            <div className="flex justify-between items-center text-xs mb-1">
-              <span className="font-medium">Embeddings</span>
-              <span className="text-muted-foreground">
-                {embeddingProgress}%
-              </span>
+        {embeddingProgress !== null &&
+          typeof embeddingProgress === "number" && (
+            <div>
+              <div className="flex justify-between items-center text-xs mb-1">
+                <span className="font-medium">Knowledge Embedding</span>
+                <span className="text-muted-foreground">
+                  {embeddingProgress}%
+                </span>
+              </div>
+              <Progress value={embeddingProgress} className="h-1" />
             </div>
-            <Progress value={embeddingProgress} className="h-1" />
-          </div>
-        )}
+          )}
       </div>
     );
   };
@@ -482,13 +602,20 @@ const ProcessingModal: React.FC = () => {
           {/* Only show progress for processing state */}
           {processingStatus === "processing" && (
             <div className="my-4">
-              <div className="flex justify-between items-center mb-2">
+              <div className="flex justify-between items-center mb-1">
                 <span className="text-sm font-medium">Overall Progress</span>
                 <span className="text-sm text-muted-foreground">
                   {processingProgress}%
                 </span>
               </div>
-              <Progress value={processingProgress} className="h-2" />
+              <Progress value={processingProgress} className="h-2 mb-2" />
+
+              {/* Display current status message more prominently if available during processing */}
+              {statusMessage && (
+                <p className="text-xs text-center text-muted-foreground mb-3">
+                  {statusMessage}
+                </p>
+              )}
 
               {/* Show detailed progress bars */}
               {renderDetailedProgress()}
@@ -503,15 +630,19 @@ const ProcessingModal: React.FC = () => {
                 </div>
               )}
 
-              {/* Show chunk information if available */}
-              {currentChunk !== null && totalChunks !== null && (
-                <div className="flex items-center mt-1 text-xs text-muted-foreground">
-                  <Layers className="h-3 w-3 mr-1" />
-                  <span>
-                    Chunk {currentChunk} of {totalChunks}
-                  </span>
-                </div>
-              )}
+              {/* Show chunk information if available and not already in statusMessage */}
+              {/* The getStatusDescription in DialogDescription might already show this,
+                  but this provides an alternative place if needed or for more direct display */}
+              {currentChunk !== null &&
+                totalChunks !== null &&
+                (!statusMessage || !statusMessage.toLowerCase().includes("chunk")) && (
+                  <div className="flex items-center mt-1 text-xs text-muted-foreground">
+                    <Layers className="h-3 w-3 mr-1" />
+                    <span>
+                      Current Chunk: {currentChunk} of {totalChunks}
+                    </span>
+                  </div>
+                )}
             </div>
           )}
 
@@ -548,7 +679,7 @@ const ProcessingModal: React.FC = () => {
               <Info className="h-3 w-3 mr-1" />
               Debug Info
             </summary>
-            <div className="mt-1 pl-4 border-l-2 border-muted">
+            <div className="mt-1 pl-4 border-l-2 border-muted  max-h-20 overflow-y-auto">
               <p>Upload ID: {uploadId || "None"}</p>
               <p>Processing ID: {processingId || "None"}</p>
               <p>Status: {processingStatus}</p>
@@ -561,16 +692,20 @@ const ProcessingModal: React.FC = () => {
             {processingStatus === "complete" ? (
               <div className="w-full text-center text-sm text-muted-foreground">
                 <RefreshCw className="h-4 w-4 mx-auto mb-2 animate-spin" />
-                Creating Training Plan...
+                Preparing Training Plan Creation...
               </div>
             ) : processingStatus === "error" ? (
-              <Button onClick={handleClose} className="w-full">
+              <Button
+                onClick={handleClose}
+                className="w-full"
+                variant="outline"
+              >
                 Close
               </Button>
             ) : (
               <Button disabled className="w-full">
                 <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                Processing...
+                Learning from documents...
               </Button>
             )}
           </DialogFooter>
@@ -581,11 +716,10 @@ const ProcessingModal: React.FC = () => {
       <TrainingPlanModal
         isOpen={isTrainingPlanModalOpen}
         setIsOpen={setIsTrainingPlanModalOpen}
-        fileIds={fileIds}
+        fileIds={fileIdsForPlan} // Use renamed state
       />
     </>
   );
 };
 
-// Add a default export for ProcessingModal
 export default ProcessingModal;

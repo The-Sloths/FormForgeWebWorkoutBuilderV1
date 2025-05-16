@@ -19,7 +19,7 @@ import { useToast } from "@/components/ui/use-toast";
 interface UploadFile {
   id: string; // Internal unique ID for the file in the UI
   file: File; // The actual file object
-  uploadId: string; // The upload session ID
+  uploadId: string | null; // Server-generated uploadId for socket events, initially null
   fileId: string | null; // The server-generated file ID after successful upload
   progress: number;
   status: "idle" | "uploading" | "completed" | "error";
@@ -56,15 +56,17 @@ export const UploadProvider: React.FC<UploadProviderProps> = ({ children }) => {
   const [overallProgress, setOverallProgress] = useState(0);
   const [allUploadsComplete, setAllUploadsComplete] = useState(false);
 
+  const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
+
   // Set up socket.io event listeners
   useEffect(() => {
     const socket = socketService.getSocket();
 
     const handleUploadProgress = (data: UploadProgressData) => {
-      // Find the file that matches this uploadId
+      // Find the file that matches this uploadId (server-generated)
       setFiles((prevFiles) =>
         prevFiles.map((file) =>
-          file.uploadId === data.uploadId
+          file.uploadId === data.uploadId && file.status !== "completed" // Ensure not to revert a completed file
             ? { ...file, progress: data.percent, status: "uploading" as const }
             : file,
         ),
@@ -120,7 +122,7 @@ export const UploadProvider: React.FC<UploadProviderProps> = ({ children }) => {
       });
 
       // Leave the upload room for this file
-      socketService.leaveUploadRoom(data.uploadId);
+      // socketService.leaveUploadRoom(data.uploadId); // Moved to FileProcessingContext or similar
     };
 
     const handleUploadError = (data: UploadErrorData) => {
@@ -145,7 +147,7 @@ export const UploadProvider: React.FC<UploadProviderProps> = ({ children }) => {
       });
 
       // Leave the upload room for this file
-      socketService.leaveUploadRoom(data.uploadId);
+      // socketService.leaveUploadRoom(data.uploadId); // Moved to FileProcessingContext or similar
     };
 
     socketService.onUploadProgress(handleUploadProgress);
@@ -158,12 +160,8 @@ export const UploadProvider: React.FC<UploadProviderProps> = ({ children }) => {
       socket.off("uploadComplete");
       socket.off("uploadError");
 
-      // Leave any active upload rooms
-      files.forEach((file) => {
-        if (file.status === "uploading") {
-          socketService.leaveUploadRoom(file.uploadId);
-        }
-      });
+      // Room leaving is now handled by onUploadComplete/onUploadError for individual files
+      // to prevent premature room leaving during file state updates.
     };
   }, [files, toast]); // Add toast to dependencies as it's used inside effects
 
@@ -216,22 +214,20 @@ export const UploadProvider: React.FC<UploadProviderProps> = ({ children }) => {
 
       // Create UploadFile objects for each valid file
       const newUploadFiles = validFiles.map((file) => {
-        // Generate a unique client file ID
-        const fileId = `file-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-        // Generate a UUID for the upload ID using the socket service
-        const uploadId = socketService.generateUploadId();
+        // Generate a unique client file ID for UI management
+        const clientFileId = `client-file-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
         return {
-          id: fileId,
+          id: clientFileId, // This is the client-side unique ID
           file,
-          uploadId,
-          fileId: null, // Initialize as null, will be populated after successful upload
+          uploadId: null, // Server-generated uploadId, initially null
+          fileId: null,   // Server-generated fileId, initially null
           progress: 0,
           status: "idle" as const,
         };
       });
 
-      console.log("Created new upload files with UUIDs:", newUploadFiles);
+      console.log("Added new files to upload queue:", newUploadFiles);
       setFiles((prevFiles) => [...prevFiles, ...newUploadFiles]);
     },
     [toast],
@@ -239,14 +235,17 @@ export const UploadProvider: React.FC<UploadProviderProps> = ({ children }) => {
 
   // Upload a single file
   const uploadFile = useCallback(
-    async (fileId: string) => {
-      const fileToUpload = files.find((f) => f.id === fileId);
-      if (!fileToUpload) return;
+    async (clientFileId: string) => { // Parameter is the client-side unique ID
+      const fileToUpload = files.find((f) => f.id === clientFileId);
+      if (!fileToUpload || fileToUpload.status === "uploading" || fileToUpload.status === "completed") {
+        console.log("File not found, already uploading, or completed:", clientFileId, fileToUpload?.status);
+        return;
+      }
 
       // Update file status to uploading
       setFiles((prevFiles) =>
         prevFiles.map((file) =>
-          file.id === fileId
+          file.id === clientFileId
             ? {
                 ...file,
                 status: "uploading" as const,
@@ -259,37 +258,42 @@ export const UploadProvider: React.FC<UploadProviderProps> = ({ children }) => {
 
       try {
         console.log(
-          `Starting upload for file ${fileToUpload.id} with uploadId ${fileToUpload.uploadId}`,
+          `Starting upload for client file ID ${clientFileId} (${fileToUpload.file.name})`,
         );
-
-        // Join the socket.io room for this upload
-        socketService.joinUploadRoom(fileToUpload.uploadId);
 
         // Create FormData for the upload
         const formData = new FormData();
         formData.append("file", fileToUpload.file);
 
-        // Upload the file using axios and CAPTURE THE RESPONSE
-        const response = await axios.post(
-          `http://localhost:3000/api/files/upload`,
+        // Upload the file using axios
+        const response = await axios.post<{
+          message: string;
+          filename: string;
+          fileId: string; // Server-generated fileId
+          uploadId: string; // Server-generated uploadId for this upload session
+          status: string;
+          files: any[]; // Adjust if you have a specific type
+        }>(
+          `${API_URL}/api/files/upload`,
           formData,
           {
             headers: {
               "Content-Type": "multipart/form-data",
-              "X-Upload-ID": fileToUpload.uploadId,
             },
+            // Note: onUploadProgress via axios is for the HTTP request itself.
+            // Socket events will provide more granular progress from the server's processing.
             onUploadProgress: (progressEvent) => {
               if (progressEvent.total) {
                 const percentCompleted = Math.round(
                   (progressEvent.loaded * 100) / progressEvent.total,
                 );
-
-                // Update progress via axios (fallback if socket events are delayed)
+                // Optionally update a temporary progress for the HTTP part
+                // but rely on socket for the server's true progress.
                 setFiles((prevFiles) =>
-                  prevFiles.map((file) =>
-                    file.id === fileId
-                      ? { ...file, progress: percentCompleted }
-                      : file,
+                  prevFiles.map((f) =>
+                    f.id === clientFileId && f.status === "uploading"
+                      ? { ...f, progress: percentCompleted > 95 ? 95 : percentCompleted } // Cap at 95 to show server processing
+                      : f,
                   ),
                 );
               }
@@ -297,52 +301,41 @@ export const UploadProvider: React.FC<UploadProviderProps> = ({ children }) => {
           },
         );
 
-        // Get fileId from the response data
-        const serverFileId = response.data.fileId;
-        const serverUploadId = response.data.uploadId;
+        const serverGeneratedUploadId = response.data.uploadId;
+        const serverGeneratedFileId = response.data.fileId;
 
-        console.log("Server response:", response.data);
-        console.log("Server fileId:", serverFileId);
+        console.log("Server HTTP upload response:", response.data);
+        console.log("Server-generated uploadId:", serverGeneratedUploadId);
+        console.log("Server-generated fileId:", serverGeneratedFileId);
 
-        // If server returned a different uploadId, update our mapping
-        if (serverUploadId && serverUploadId !== fileToUpload.uploadId) {
-          console.log(
-            `Server returned different uploadId: ${serverUploadId}, mapping to client ID: ${fileToUpload.uploadId}`,
-          );
-          socketService.mapServerToClientId(
-            serverUploadId,
-            fileToUpload.uploadId,
-          );
-        }
-
-        if (serverFileId) {
-          // Immediately update the file with the server fileId
+        if (serverGeneratedUploadId && serverGeneratedFileId) {
+          // Update the file in state with server-generated IDs
           setFiles((prevFiles) =>
             prevFiles.map((file) =>
-              file.id === fileId
+              file.id === clientFileId
                 ? {
                     ...file,
-                    fileId: serverFileId,
-                    progress: 100,
-                    status: "completed" as const,
+                    uploadId: serverGeneratedUploadId, // Store server's uploadId
+                    fileId: serverGeneratedFileId,   // Store server's fileId
+                    // Status remains 'uploading'; 'completed' will be set by socket event
                   }
                 : file,
             ),
           );
 
-          console.log(
-            `Updated file ${fileId} with server fileId: ${serverFileId}`,
-          );
+          // Join the socket.io room for this specific upload using server's uploadId
+          socketService.joinUploadRoom(serverGeneratedUploadId);
+          console.log(`Joined socket room for uploadId: ${serverGeneratedUploadId}`);
         } else {
-          console.warn("No fileId received in upload response");
+          console.warn("Server response missing uploadId or fileId", response.data);
+          throw new Error("Invalid server response: Missing uploadId or fileId.");
         }
       } catch (error) {
-        console.error("Upload error:", error);
+        console.error(`Upload error for clientFileId ${clientFileId}:`, error);
 
-        // Set error status if socket.io didn't catch it
         setFiles((prevFiles) =>
           prevFiles.map((file) =>
-            file.id === fileId
+            file.id === clientFileId
               ? {
                   ...file,
                   status: "error" as const,
@@ -363,12 +356,15 @@ export const UploadProvider: React.FC<UploadProviderProps> = ({ children }) => {
           variant: "destructive",
         });
 
-        // Leave the socket room on error as well
-        socketService.leaveUploadRoom(fileToUpload.uploadId);
+        // Leave the socket room on error if an uploadId was associated with it
+        // (though at this stage, if HTTP fails, room joining might not have happened)
+        if (fileToUpload.uploadId) {
+          socketService.leaveUploadRoom(fileToUpload.uploadId);
+        }
       }
     },
-    [files, toast],
-  ); // Add files and toast to dependencies
+    [files, toast, API_URL],
+  ); // Add files, toast, and API_URL to dependencies
 
   // Upload all files with idle or error status
   const uploadFiles = useCallback(async () => {
@@ -399,20 +395,23 @@ export const UploadProvider: React.FC<UploadProviderProps> = ({ children }) => {
     setFiles((prevFiles) => {
       const fileToRemove = prevFiles.find((f) => f.id === fileId);
 
-      if (fileToRemove && fileToRemove.status === "uploading") {
-        // Leave the socket room if the file is uploading
+      if (fileToRemove && fileToRemove.uploadId && (fileToRemove.status === "uploading" || fileToRemove.status === "error")) {
+        // Leave the socket room if the file was attempting/failed an upload
         socketService.leaveUploadRoom(fileToRemove.uploadId);
       }
       return prevFiles.filter((file) => file.id !== fileId);
     });
   }, []);
 
-  // Retry a failed upload
+  // Retry a failed upload by calling uploadFile with the client-side ID
   const retryUpload = useCallback(
-    async (fileId: string) => {
-      await uploadFile(fileId);
+    async (clientFileId: string) => {
+      // Reset progress and error for the specific file before retrying
+      setFiles(prev => prev.map(f => f.id === clientFileId ? {...f, progress: 0, error: undefined, status: 'idle', uploadId: null, fileId: null} : f));
+      // Then call uploadFile for this specific clientFileId
+      await uploadFile(clientFileId);
     },
-    [uploadFile], // Add uploadFile to dependencies
+    [uploadFile],
   );
 
   const contextValue = {
