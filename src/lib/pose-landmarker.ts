@@ -2,7 +2,7 @@ import type { Landmark, PoseLandmarkerResult } from '@/types';
 import { FilesetResolver, PoseLandmarker } from '@mediapipe/tasks-vision';
 
 class PoseLandmarkerService {
-  private poseLandmarker: any = null;
+  private poseLandmarker: PoseLandmarker | null = null;
   private isInitialized = false;
 
   async initialize(): Promise<void> {
@@ -40,14 +40,18 @@ class PoseLandmarkerService {
     if (!this.isInitialized) {
       await this.initialize();
     }
-    
+
+    if (!this.poseLandmarker) {
+      return Promise.reject(new Error('PoseLandmarker failed to initialize.'));
+    }
+
     return new Promise((resolve, reject) => {
       const img = new Image();
       img.src = URL.createObjectURL(imageFile);
-      
+
       img.onload = () => {
         try {
-          const results = this.poseLandmarker.detect(img);
+          const results = this.poseLandmarker!.detect(img);
           resolve(results);
         } catch (error) {
           reject(error);
