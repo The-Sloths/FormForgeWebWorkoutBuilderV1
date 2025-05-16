@@ -2,7 +2,7 @@ import { io, Socket } from "socket.io-client";
 import { v4 as uuidv4 } from "uuid";
 
 // Ensure VITE_API_URL is used, with a fallback for development if not set
-const SOCKET_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
+const SOCKET_URL = import.meta.env.VITE_API_URL;
 
 // Types based on the AsyncAPI specification
 export interface UploadProgressData {
@@ -187,7 +187,9 @@ class SocketService {
     const socket = this.getSocket();
 
     if (!this.isConnected) {
-      console.warn(`SocketService: Cannot join room for ${uploadId}, socket not connected.`);
+      console.warn(
+        `SocketService: Cannot join room for ${uploadId}, socket not connected.`,
+      );
       return;
     }
 

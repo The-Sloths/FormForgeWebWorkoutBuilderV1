@@ -14,12 +14,19 @@ import {
   type ProcessingErrorData,
   type ProcessingStatus as SocketProcessingStatus,
 } from "@/lib/socket";
-import { type ProcessingStatus, type ProcessingResults, type FileProcessingContextType } from "./file-processing-utils";
-import { mapSocketStatusToUiStatus, FileProcessingContext } from "./file-processing-utils";
+import {
+  type ProcessingStatus,
+  type ProcessingResults,
+  type FileProcessingContextType,
+} from "./file-processing-utils";
+import {
+  mapSocketStatusToUiStatus,
+  FileProcessingContext,
+} from "./file-processing-utils";
 import { useToast } from "@/components/ui/use-toast";
 
 // Define the base URL for API calls, respecting VITE_API_URL
-const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
+const API_BASE_URL = import.meta.env.VITE_API_URL;
 
 interface FileProcessingProviderProps {
   children: ReactNode;
@@ -229,18 +236,22 @@ export const FileProcessingProvider: React.FC<FileProcessingProviderProps> = ({
     // if (typeof socketService.enableDebugMode === "function") {
     //   socketService.enableDebugMode();
     // }
-const currentHandlers = handlersRef.current;
+    const currentHandlers = handlersRef.current;
 
-// Register event listeners
-socketService.onProcessingStart(currentHandlers.handleProcessingStart);
-socketService.onProcessingProgress(currentHandlers.handleProcessingProgress);
-socketService.onProcessingComplete(currentHandlers.handleProcessingComplete);
-socketService.onProcessingError(currentHandlers.handleProcessingError);
+    // Register event listeners
+    socketService.onProcessingStart(currentHandlers.handleProcessingStart);
+    socketService.onProcessingProgress(
+      currentHandlers.handleProcessingProgress,
+    );
+    socketService.onProcessingComplete(
+      currentHandlers.handleProcessingComplete,
+    );
+    socketService.onProcessingError(currentHandlers.handleProcessingError);
 
-return () => {
-  console.log(
-    `Cleaning up socket event listeners for uploadId: ${uploadId}`
-  );
+    return () => {
+      console.log(
+        `Cleaning up socket event listeners for uploadId: ${uploadId}`,
+      );
 
       // Get a reference to the socket for cleanup
       const socket = socketService.getSocket();
@@ -290,13 +301,10 @@ return () => {
         setIsModalOpen(true);
 
         // Call the API to start processing
-        const response = await axios.post(
-          `${API_BASE_URL}/api/files/process`,
-          {
-            uploadId: uploadId,
-            fileIds: fileIds,
-          },
-        );
+        const response = await axios.post(`${API_BASE_URL}/api/files/process`, {
+          uploadId: uploadId,
+          fileIds: fileIds,
+        });
 
         // Extract the server-assigned uploadId and processingId from the response
         const serverUploadId = response.data.uploadId;
@@ -381,5 +389,3 @@ return () => {
     </FileProcessingContext.Provider>
   );
 };
-
-

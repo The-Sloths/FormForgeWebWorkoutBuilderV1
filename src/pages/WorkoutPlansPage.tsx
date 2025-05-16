@@ -23,7 +23,7 @@ const WorkoutPlansListPage: React.FC = () => {
       setError(null);
 
       try {
-        const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
+        const API_URL = import.meta.env.VITE_API_URL;
         const response = await fetch(`${API_URL}/api/workout-plans`);
 
         if (!response.ok) {
@@ -61,7 +61,7 @@ const WorkoutPlansListPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
+    <div className="min-h-screen">
       <header className="bg-primary text-primary-foreground py-8">
         <div className="container mx-auto text-center">
           <h1 className="text-3xl font-bold">Gradatrim</h1>

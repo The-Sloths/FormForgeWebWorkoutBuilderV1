@@ -65,7 +65,7 @@ interface WorkoutPlan {
 }
 
 // Create socket instance - ensure this uses VITE_API_URL
-const socketUrl = import.meta.env.VITE_API_URL || "http://localhost:3000";
+const socketUrl = import.meta.env.VITE_API_URL;
 const socket: Socket = io(socketUrl);
 
 // Training Plan Modal Component

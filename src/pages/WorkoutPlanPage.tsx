@@ -100,7 +100,7 @@ export const WorkoutPlanPage: React.FC = () => {
   } = workoutPlan;
 
   return (
-    <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
+    <div className="min-h-screen">
       <header className="bg-primary text-primary-foreground py-8">
         <div className="container mx-auto text-center">
           <h1 className="text-3xl font-bold">Workout Plan</h1>

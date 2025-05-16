@@ -23,7 +23,9 @@ const DocumentsPage: React.FC = () => {
 
       <main className="container mx-auto py-8 px-4">
         <div className="max-w-4xl mx-auto">
-          <h2 className="text-2xl font-bold mb-6">Upload Documents</h2>
+          <h2 className="text-2xl font-bold mb-6 text-foreground">
+            Upload Documents
+          </h2>
           <p className="text-muted-foreground mb-8">
             Upload your PDF and Markdown files to generate workout plans. Drag
             and drop files or use the file browser.

@@ -1,10 +1,4 @@
-import React, {
-
-  useState,
-  useEffect,
-  useCallback,
-  type ReactNode,
-} from "react";
+import React, { useState, useEffect, useCallback, type ReactNode } from "react";
 import axios from "axios";
 import {
   socketService,
@@ -60,7 +54,7 @@ export const UploadProvider: React.FC<UploadProviderProps> = ({ children }) => {
   const [overallProgress, setOverallProgress] = useState(0);
   const [allUploadsComplete, setAllUploadsComplete] = useState(false);
 
-  const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
+  const API_URL = import.meta.env.VITE_API_URL;
 
   // Set up socket.io event listeners
   useEffect(() => {
@@ -213,7 +207,7 @@ export const UploadProvider: React.FC<UploadProviderProps> = ({ children }) => {
           id: clientFileId, // This is the client-side unique ID
           file,
           uploadId: null, // Server-generated uploadId, initially null
-          fileId: null,   // Server-generated fileId, initially null
+          fileId: null, // Server-generated fileId, initially null
           progress: 0,
           status: "idle" as const,
         };
@@ -226,9 +220,14 @@ export const UploadProvider: React.FC<UploadProviderProps> = ({ children }) => {
 
   // Upload a single file
   const uploadFile = useCallback(
-    async (clientFileId: string) => { // Parameter is the client-side unique ID
+    async (clientFileId: string) => {
+      // Parameter is the client-side unique ID
       const fileToUpload = files.find((f) => f.id === clientFileId);
-      if (!fileToUpload || fileToUpload.status === "uploading" || fileToUpload.status === "completed") {
+      if (
+        !fileToUpload ||
+        fileToUpload.status === "uploading" ||
+        fileToUpload.status === "completed"
+      ) {
         // Optionally keep a log for this case if it's important for operational monitoring
         // console.log("UploadFile: File not found, already uploading, or completed:", clientFileId, fileToUpload?.status);
         return;
@@ -265,33 +264,32 @@ export const UploadProvider: React.FC<UploadProviderProps> = ({ children }) => {
           uploadId: string; // Server-generated uploadId for this upload session
           status: string;
           files: UploadApiResponseFile[];
-        }>(
-          `${API_URL}/api/files/upload`,
-          formData,
-          {
-            headers: {
-              "Content-Type": "multipart/form-data",
-            },
-            // Note: onUploadProgress via axios is for the HTTP request itself.
-            // Socket events will provide more granular progress from the server's processing.
-            onUploadProgress: (progressEvent) => {
-              if (progressEvent.total) {
-                const percentCompleted = Math.round(
-                  (progressEvent.loaded * 100) / progressEvent.total,
-                );
-                // Optionally update a temporary progress for the HTTP part
-                // but rely on socket for the server's true progress.
-                setFiles((prevFiles) =>
-                  prevFiles.map((f) =>
-                    f.id === clientFileId && f.status === "uploading"
-                      ? { ...f, progress: percentCompleted > 95 ? 95 : percentCompleted } // Cap at 95 to show server processing
-                      : f,
-                  ),
-                );
-              }
-            },
+        }>(`${API_URL}/api/files/upload`, formData, {
+          headers: {
+            "Content-Type": "multipart/form-data",
           },
-        );
+          // Note: onUploadProgress via axios is for the HTTP request itself.
+          // Socket events will provide more granular progress from the server's processing.
+          onUploadProgress: (progressEvent) => {
+            if (progressEvent.total) {
+              const percentCompleted = Math.round(
+                (progressEvent.loaded * 100) / progressEvent.total,
+              );
+              // Optionally update a temporary progress for the HTTP part
+              // but rely on socket for the server's true progress.
+              setFiles((prevFiles) =>
+                prevFiles.map((f) =>
+                  f.id === clientFileId && f.status === "uploading"
+                    ? {
+                        ...f,
+                        progress: percentCompleted > 95 ? 95 : percentCompleted,
+                      } // Cap at 95 to show server processing
+                    : f,
+                ),
+              );
+            }
+          },
+        });
 
         const serverGeneratedUploadId = response.data.uploadId;
         const serverGeneratedFileId = response.data.fileId;
@@ -304,7 +302,7 @@ export const UploadProvider: React.FC<UploadProviderProps> = ({ children }) => {
                 ? {
                     ...file,
                     uploadId: serverGeneratedUploadId, // Store server's uploadId
-                    fileId: serverGeneratedFileId,   // Store server's fileId
+                    fileId: serverGeneratedFileId, // Store server's fileId
                     // Status remains 'uploading'; 'completed' will be set by socket event
                   }
                 : file,
@@ -314,8 +312,13 @@ export const UploadProvider: React.FC<UploadProviderProps> = ({ children }) => {
           // Join the socket.io room for this specific upload using server's uploadId
           socketService.joinUploadRoom(serverGeneratedUploadId);
         } else {
-          console.warn("Server response missing uploadId or fileId", response.data);
-          throw new Error("Invalid server response: Missing uploadId or fileId.");
+          console.warn(
+            "Server response missing uploadId or fileId",
+            response.data,
+          );
+          throw new Error(
+            "Invalid server response: Missing uploadId or fileId.",
+          );
         }
       } catch (error) {
         console.error(`Upload error for clientFileId ${clientFileId}:`, error);
@@ -382,7 +385,11 @@ export const UploadProvider: React.FC<UploadProviderProps> = ({ children }) => {
     setFiles((prevFiles) => {
       const fileToRemove = prevFiles.find((f) => f.id === fileId);
 
-      if (fileToRemove && fileToRemove.uploadId && (fileToRemove.status === "uploading" || fileToRemove.status === "error")) {
+      if (
+        fileToRemove &&
+        fileToRemove.uploadId &&
+        (fileToRemove.status === "uploading" || fileToRemove.status === "error")
+      ) {
         // Leave the socket room if the file was attempting/failed an upload
         socketService.leaveUploadRoom(fileToRemove.uploadId);
       }
@@ -394,7 +401,20 @@ export const UploadProvider: React.FC<UploadProviderProps> = ({ children }) => {
   const retryUpload = useCallback(
     async (clientFileId: string) => {
       // Reset progress and error for the specific file before retrying
-      setFiles(prev => prev.map(f => f.id === clientFileId ? {...f, progress: 0, error: undefined, status: 'idle', uploadId: null, fileId: null} : f));
+      setFiles((prev) =>
+        prev.map((f) =>
+          f.id === clientFileId
+            ? {
+                ...f,
+                progress: 0,
+                error: undefined,
+                status: "idle",
+                uploadId: null,
+                fileId: null,
+              }
+            : f,
+        ),
+      );
       // Then call uploadFile for this specific clientFileId
       await uploadFile(clientFileId);
     },
@@ -418,5 +438,3 @@ export const UploadProvider: React.FC<UploadProviderProps> = ({ children }) => {
     </UploadContext.Provider>
   );
 };
-
-
