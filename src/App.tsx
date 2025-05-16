@@ -31,7 +31,11 @@ export default function App() {
         <nav className="bg-primary text-primary-foreground">
           <div className="container mx-auto px-4 py-2 flex items-center justify-between">
             <Link to="/" className="font-bold text-lg">
-              Gradatrim
+              <img
+                src="/gradatrim_logo.png"
+                alt="Gradatrim Logo"
+                className="h-16 w-auto"
+              />
             </Link>
             <div className="space-x-4">
               <Link to="/workouts" className="hover:underline">
