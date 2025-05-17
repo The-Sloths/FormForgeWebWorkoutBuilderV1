@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Loader2 } from "lucide-react";
 
 import type { WorkoutPlan } from "@/types";
+const apiUrl = import.meta.env.VITE_API_URL;
 
 export const WorkoutPlanPage: React.FC = () => {
   const { planId } = useParams<{ planId: string }>();
@@ -34,7 +35,7 @@ export const WorkoutPlanPage: React.FC = () => {
       try {
         // Fetch all workout plans and find the one matching the ID
         // A more efficient API would be GET /api/workout-plans/{planId}
-        const response = await fetch("http://localhost:3000/api/workout-plans");
+        const response = await fetch(`${apiUrl}/api/workout-plans`);
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`);
         }
